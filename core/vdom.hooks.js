@@ -6,7 +6,8 @@ let currentComponent = null,
     previewNode = { next: null },
     headPreview = previewNode,
     regression = false,
-    handler = null;
+    handler = null,
+    disableRerender = false;
 
 const resetContext = () => {
     currentComponent.hookNode = currentComponent.hooks;
@@ -111,6 +112,24 @@ const retainData = (nChild, vdom) => {
     }
 };
 
+const getData = (until) => {
+    if (!currentComponent) return;
+
+    const hookNode = currentComponent.hookNode;
+    if (!hookNode) return;
+    let n = 0;
+    let data = [];
+
+    let current = hookNode;
+    while (n < until && current) {
+        data.push(current?.value || undefined)
+        current = current?.next
+        n++;
+    }
+
+    return data;
+}
+
 /**
  * Component wrapper that tracks hook usage count.
  *
@@ -127,7 +146,7 @@ const retainData = (nChild, vdom) => {
  *    isComp: true
  * }} Object containing information of the componennt.
  */
-const comp = (compFn, args = {}, name = null) => {
+const comp = (compFn, args = {}, remember = false) => {
     const previewHook = previewNode;
     regression = true;
 
@@ -152,11 +171,8 @@ const comp = (compFn, args = {}, name = null) => {
         vnode: vdom,
         stringified: JSON.stringify(vdom),
         isComp: true,
+        remember: remember
     };
-
-    if (name) {
-        res.name = name
-    }
 
     return res;
 };
@@ -195,7 +211,7 @@ const useState = (initial) => {
     const set = (val) => {
         hookNode.value = typeof val == "function" ? val(hookNode?.value) : val;
 
-        if (!regression) {
+        if (!regression && !disableRerender) {
             currentComponent.rerender();
         }
     };
@@ -208,6 +224,17 @@ const useState = (initial) => {
 
     return [hookNode?.value, set];
 };
+
+const bulkSetState = (callback) =>
+{
+    disableRerender = true;
+    callback();
+    disableRerender = false;
+
+    if (!regression) {
+        currentComponent.rerender()
+    }
+}
 
 const useRef = (initial) => {
     let hookNode = regression ? previewNode : currentComponent.hookNode;
@@ -256,6 +283,14 @@ const useEffect = (effect, deps) => {
     }
 };
 
+/**
+ * Memoizes the result of a computation based on dependency changes.
+ *
+ * @template T
+ * @param {() => T} compute - Function that returns the computed value.
+ * @param {readonly any[]} deps - Dependency list used to determine recomputation.
+ * @returns {T} Memoized value.
+ */
 const useMemo = (compute, deps) => {
     let hookNode = regression ? previewNode : currentComponent.hookNode;
 
@@ -297,9 +332,19 @@ function onReady(cb) {
         }
     }
 }
-
+/**
+ * 
+ * @param {Function} fn 
+ * @param {String} target 
+ * @param {String} id 
+ * @returns 
+ */
 function createRoot(fn, target, id = "default") {
     const comp = {
+        use: (any, callback) => {
+            callback(any);
+            return comp;
+        },
         hooks: { next: null, ...getHooks(id) },
         hookNode: null,
         vdom: null,
@@ -344,6 +389,9 @@ export {
     comp,
     allocate,
     orphan,
+    overwrite,
     setRegression,
     triggerRerender,
+    getData,
+    bulkSetState
 };

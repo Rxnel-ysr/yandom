@@ -1,5 +1,6 @@
 "use strict";
-import { allocate, forgot, orphan } from "./vdom.hooks.js";
+import { allocate, forgot, getData, orphan, overwrite } from "./vdom.hooks.js";
+import { memorize, recall, forget, remembered } from "./memory.js"
 
 let jobs = [];
 const _keys = {};
@@ -316,6 +317,7 @@ const patchChildrenWithKeys = (parent, oldChildren, newChildren) => {
     updatedChildren.forEach((vnode, i) => {
         const current = parent.children[i];
         if (vnode.el !== current) {
+            isComp
             parent.insertBefore(vnode.el, current);
         }
     });
@@ -325,29 +327,53 @@ const patchChildrenWithKeys = (parent, oldChildren, newChildren) => {
 
 const handleComponent = (parent, old, newOne) => {
     if (old?.isComp && newOne?.isComp) {
+        // console.log(old, newOne)
         if (old.stringified !== newOne.stringified) {
             if (old.compHooks > newOne.compHooks) {
+                if (old.remember) {
+                    memorize(old.stringified, getData(old.compHooks))
+                }
                 forgot(old.compHooks);
                 orphan(old.compHooks - newOne.compHooks);
+                if (newOne.remember && remembered(newOne.stringified)) {
+                    overwrite(recall(newOne.stringified))
+                }
             } else if (old.compHooks < newOne.compHooks) {
+                if (old.remember) {
+                    memorize(old.stringified, getData(old.compHooks))
+                }
                 forgot(old.compHooks);
                 allocate(newOne.compHooks - old.compHooks);
+                if (newOne.remember && remembered(newOne.stringified)) {
+                    overwrite(recall(newOne.stringified))
+                }
             } else {
+                if (old.remember) {
+                    memorize(old.stringified, getData(old.compHooks))
+                }
                 forgot(old.compHooks);
+                if (newOne.remember && remembered(newOne.stringified)) {
+                    overwrite(recall(newOne.stringified))
+                }
             }
         }
+
 
         newOne.vdom = patch(parent, old.vdom, newOne.render(), true);
         return newOne;
     } else if (old?.isComp && !newOne?.isComp) {
+        if (old.remember) {
+            memorize(old.stringified, getData(old.compHooks))
+        }
         forgot(old.compHooks);
         orphan(old.compHooks - 1);
-        // cleanupVNode(old.vdom)
 
         return patch(parent, old.vdom, newOne, true);
     } else if (!old?.isComp && newOne?.isComp) {
         allocate(newOne.compHooks - 1);
-        // cleanupVNode(old)
+        if (newOne.remember && remembered(newOne.stringified)) {
+            overwrite(recall(newOne.stringified))
+        }
 
         newOne.vdom = patch(parent, old, newOne.render(), true);
         return newOne;
@@ -375,7 +401,8 @@ const patch = (parent, oldNode, newNode, skip = false) => {
     }
 
     if (newNode.tag === "#text") {
-        if (oldNode.tag === "#text") {
+        // console.log(oldNode,newNode)
+        if (oldNode?.tag === "#text") {
             const oldText = oldNode.children?.[0];
             const newText = newNode.children?.[0];
 
@@ -387,7 +414,7 @@ const patch = (parent, oldNode, newNode, skip = false) => {
         }
 
         const newEl = renderVNode(newNode);
-        if (oldNode.el) {
+        if (oldNode?.el) {
             parent.replaceChild(newEl, oldNode.el);
         } else {
             parent.appendChild(newEl);
