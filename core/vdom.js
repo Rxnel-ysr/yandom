@@ -1,8 +1,9 @@
 "use strict";
 import { allocate, forgot, getData, orphan, overwrite } from "./vdom.hooks.js";
-import { memorize, recall, forget, remembered } from "./memory.js"
+import { memorize, recall, remembered } from "./memory.js"
 
-let jobs = [];
+let jobs = [],
+    memoryInvalidateAfter = 60000;
 const _keys = {};
 const getKey = (vnode) => vnode?.props?.key ?? null;
 const hasKey = (vnode) => vnode && typeof vnode.props?.key !== "undefined";
@@ -16,16 +17,17 @@ const pushJob = (fn) => {
     jobs.push(fn);
 };
 
-const executeJobs = () => {
+const executeJobs =  () => {
     requestAnimationFrame(() => {
         for (const job of jobs) job();
-        jobs = [];
+        jobs.length = 0;
     });
 };
 
+
 const flattenChildren = (children) =>
     children
-        .flat(Infinity)
+        .flat(512)
         .filter((c) => c !== false && c !== null && c !== undefined);
 
 const createVNode = (tag, props = {}, ...children) => {
@@ -331,7 +333,7 @@ const handleComponent = (parent, old, newOne) => {
         if (old.stringified !== newOne.stringified) {
             if (old.compHooks > newOne.compHooks) {
                 if (old.remember) {
-                    memorize(old.stringified, getData(old.compHooks))
+                    memorize(old.stringified, getData(old.compHooks), memoryInvalidateAfter)
                 }
                 forgot(old.compHooks);
                 orphan(old.compHooks - newOne.compHooks);
@@ -340,7 +342,7 @@ const handleComponent = (parent, old, newOne) => {
                 }
             } else if (old.compHooks < newOne.compHooks) {
                 if (old.remember) {
-                    memorize(old.stringified, getData(old.compHooks))
+                    memorize(old.stringified, getData(old.compHooks), memoryInvalidateAfter)
                 }
                 forgot(old.compHooks);
                 allocate(newOne.compHooks - old.compHooks);
@@ -349,7 +351,7 @@ const handleComponent = (parent, old, newOne) => {
                 }
             } else {
                 if (old.remember) {
-                    memorize(old.stringified, getData(old.compHooks))
+                    memorize(old.stringified, getData(old.compHooks), memoryInvalidateAfter)
                 }
                 forgot(old.compHooks);
                 if (newOne.remember && remembered(newOne.stringified)) {
@@ -363,9 +365,9 @@ const handleComponent = (parent, old, newOne) => {
         return newOne;
     } else if (old?.isComp && !newOne?.isComp) {
         if (old.remember) {
-            memorize(old.stringified, getData(old.compHooks))
+            memorize(old.stringified, getData(old.compHooks), memoryInvalidateAfter)
         }
-        forgot(old.compHooks);
+        forgot(old.compHooks);  
         orphan(old.compHooks - 1);
 
         return patch(parent, old.vdom, newOne, true);
@@ -549,35 +551,114 @@ const registerCustomVdom = (tag, resolver) => {
     customVdom[tag] = resolver;
 };
 
+/**
+ * DSL-VDOM factory proxy.
+ *
+ * Provides:
+ * - Dynamic HTML tag functions (e.g. `html.div(...)`)
+ * - DOM mount helpers
+ * - Shadow DOM mounting
+ * - Fragment creation
+ * - VDOM rendering passthrough
+ *
+ * @type {Proxy<Record<string, any>>}
+ *
+ * @example
+ * html.div({ class: "box" }, "Hello")
+ * html.mount(node, "#app")
+ * html.$(child1, child2)
+ */
 const html = new Proxy(
     {},
     {
+        /**
+         * Trap for dynamic property access.
+         *
+         * @param {object} _
+         * @param {string} tag
+         *
+         * @returns {Function}
+         * Tag factory, action helper, or custom VDOM handler.
+         */
         get: (_, tag) => {
+            /**
+             * Built-in DSL actions.
+             *
+             * @type {{
+             *   mount: (el: Node, selector: string, scope?: ParentNode) => void,
+             *   push: (el: Node, selector: string, scope?: ParentNode) => void,
+             *   mountShadow: (el: Node, selector: string, scope?: ParentNode) => ShadowRoot,
+             *   vdom: Function,
+             *   _: Function,
+             *   $: (...children: any[]) => { tag: "#fragment", children: any[] }
+             * }}
+             */
             const actions = {
+                /**
+                 * Replace target children with element.
+                 */
                 mount: (el, selector, scope = document) =>
                     getTarget(selector, scope).replaceChildren(el),
+
+                /**
+                 * Append element to target.
+                 */
                 push: (el, selector, scope = document) =>
                     getTarget(selector, scope).appendChild(el),
+
+                /**
+                 * Mount into Shadow DOM (open).
+                 * Reuses existing shadow root if present.
+                 */
                 mountShadow: (el, selector, scope = document) => {
                     const target = getTarget(selector, scope);
-                    if (!target._shadow) target.attachShadow({ mode: "open" });
+                    if (!target._shadow) {
+                        target._shadow = target.attachShadow({ mode: "open" });
+                    }
                     target._shadow.replaceChildren(el);
                     return target._shadow;
                 },
+
+                /**
+                 * Render Virtual DOM tree.
+                 */
                 vdom: RenderVDOM,
+
+                /**
+                 * Placeholder / noop hook.
+                 */
                 _: __,
+
+                /**
+                 * Fragment factory.
+                 */
                 $: (...children) => ({
                     tag: "#fragment",
                     children: flattenChildren(children),
                 }),
+
                 ...customVdom,
             };
 
+            /**
+             * Resolution order:
+             * 1. Built-in actions
+             * 2. Custom VDOM extensions
+             * 3. HTML tag factory
+             */
             return (
                 actions[tag] ||
                 customVdom[tag] ||
+                /**
+                 * HTML element VNode factory.
+                 *
+                 * @param {object|string|any[]} [props]
+                 * @param {...any} children
+                 *
+                 * @returns {object} VNode
+                 */
                 ((props = {}, ...children) => {
-                    if (typeof props == "string") {
+                    if (typeof props === "string") {
                         return createVNode(tag, {}, [props]);
                     } else if (Array.isArray(props)) {
                         return createVNode(tag, {}, props);
@@ -589,6 +670,7 @@ const html = new Proxy(
         },
     }
 );
+
 
 export {
     html,

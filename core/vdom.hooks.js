@@ -24,6 +24,8 @@ const setRegression = (bool) => (regression = bool);
  * @param {number} [n=1] - Number of subsequent hook states to forget
  */
 const forgot = (n = 1) => {
+    if (regression) return;
+
     if (!currentComponent) return;
 
     let hookNode = currentComponent.hookNode;
@@ -69,16 +71,16 @@ const allocate = (n) => {
 };
 
 /**
- * 
- * @param {Mixed[]} array 
+ *
+ * @param {any[]} array
  */
 const overwrite = (array) => {
     let start = currentComponent.hookNode;
     array.map((e) => {
         start.value = e;
         start = start.next;
-    })
-}
+    });
+};
 
 const orphan = (n) => {
     let start = currentComponent.hookNode;
@@ -88,7 +90,7 @@ const orphan = (n) => {
     for (let i = 1; i <= n; i++) {
         end = end.next = end.next;
     }
-    delete start.next
+    delete start.next;
     start.next = end?.next || null;
 };
 
@@ -122,59 +124,89 @@ const getData = (until) => {
 
     let current = hookNode;
     while (n < until && current) {
-        data.push(current?.value || undefined)
-        current = current?.next
+        data.push(current?.value || undefined);
+        current = current?.next;
         n++;
     }
 
     return data;
-}
+};
 
 /**
- * Component wrapper that tracks hook usage count.
+ * Component factory with hook tracking and optional memoization.
  *
- * @template {Record<string, any>} T
+ * @template {Record<string, any>} A
  * @template R
- * @param {(args: T) => R} compFn - Component function that receives args.
- * @param {T} [args={}] - Arguments passed to the component.
+ *
+ * @param {(args: A) => R} compFn
+ * Component render function. Must be pure. Receives `options.args`.
+ *
+ * @param {{
+ *   name?: string | null,
+ *   hook?: number | null,
+ *   args?: A
+ * }} [options]
+ * Component configuration object.
+ * - `name`: Optional component identifier.
+ * - `hook`: Optional hooks count inside `compFn`.
+ * - `args`: Arguments passed into `compFn`.
+ *
+ * @param {boolean} [remember=false]
+ * Enables component result persistence (memoization / retention).
  *
  * @returns {{
- *    render: () => R,
- *    compHooks: number,
- *    prev: any,
- *    next: any,
- *    isComp: true
- * }} Object containing information of the componennt.
+ *   render: () => R,
+ *   isComp: true,
+ *   compHooks: number,
+ *   stringified: string,
+ *   remember: boolean
+ * }}
+ * Component descriptor object.
  */
-const comp = (compFn, args = {}, remember = false) => {
-    const previewHook = previewNode;
-    regression = true;
-
-    const vdom = compFn(args);
-
-    regression = false;
-    const nextExpectedNode = previewNode;
-
-    let current = previewHook;
+const comp = (
+    compFn,
+    options = {
+        name: null,
+        hook: null,
+        args: {}
+    },
+    remember = false
+) => {
+    let name;
     let counter = 0;
-
-    while (current && current !== nextExpectedNode) {
-        current = current.next;
-        counter++;
-    }
-
-    let res = {
-        render: () => compFn(args),
-        compHooks: counter,
-        prev: previewHook,
-        next: nextExpectedNode,
-        vnode: vdom,
-        stringified: JSON.stringify(vdom),
+    let result = {
+        render: () => compFn(options.args),
         isComp: true,
-        remember: remember
+        remember
     };
 
-    return res;
+    if (!options.hook && !options.name) {
+        const previewHook = previewNode;
+
+        regression = true;
+
+        const vdom = compFn(options.args);
+
+        result.vnode = vdom;
+
+        regression = false;
+
+        const nextExpectedNode = previewNode;
+        let current = previewHook;
+
+        while (current && current !== nextExpectedNode) {
+            current = current.next;
+            counter++;
+        }
+        name = JSON.stringify(vdom);
+    } else {
+        counter = options.hook;
+        name = options.name;
+    }
+    result.stringified = name;
+    result.compHooks = counter;
+
+    return result;
 };
 
 /**
@@ -204,6 +236,11 @@ const destroy = () => {
 const useState = (initial) => {
     let hookNode = regression ? previewNode : currentComponent.hookNode;
 
+    if (regression) {
+        previewNode = hookNode.next = hookNode.next || { next: null };
+        return [initial, () => { }];
+    }
+
     if (typeof hookNode?.value === "undefined") {
         hookNode.value = initial;
     }
@@ -216,43 +253,47 @@ const useState = (initial) => {
         }
     };
 
-    if (regression) {
-        previewNode = hookNode.next = hookNode.next || { next: null };
-    } else {
-        currentComponent.hookNode = hookNode.next = hookNode.next || { next: null };
-    }
+    currentComponent.hookNode = hookNode.next = hookNode.next || { next: null };
 
     return [hookNode?.value, set];
 };
 
-const bulkSetState = (callback) =>
-{
+const bulkSetState = (callback) => {
+    if (regression) return;
+
     disableRerender = true;
     callback();
     disableRerender = false;
 
     if (!regression) {
-        currentComponent.rerender()
+        currentComponent.rerender();
     }
-}
+};
 
 const useRef = (initial) => {
     let hookNode = regression ? previewNode : currentComponent.hookNode;
+
+    if (regression) {
+        previewNode = hookNode.next = hookNode.next || { next: null };
+        return { current: undefined };
+    }
 
     if (typeof hookNode?.value === "undefined") {
         hookNode.value = { current: initial };
     }
 
-    if (regression) {
-        previewNode = hookNode.next = hookNode.next || { next: null };
-    } else {
-        currentComponent.hookNode = hookNode.next = hookNode.next || { next: null };
-    }
+    currentComponent.hookNode = hookNode.next = hookNode.next || { next: null };
     return hookNode?.value;
 };
 
 const useEffect = (effect, deps) => {
     let hookNode = regression ? previewNode : currentComponent.hookNode;
+
+    if (regression) {
+        previewNode = hookNode.next = hookNode.next || { next: null };
+        return;
+    }
+
     const hasNoDeps = !deps;
 
     const oldHook = hookNode?.value;
@@ -276,11 +317,7 @@ const useEffect = (effect, deps) => {
         hookNode.value = oldHook;
     }
 
-    if (regression) {
-        previewNode = hookNode.next = hookNode.next || { next: null };
-    } else {
-        currentComponent.hookNode = hookNode.next = hookNode.next || { next: null };
-    }
+    currentComponent.hookNode = hookNode.next = hookNode.next || { next: null };
 };
 
 /**
@@ -294,6 +331,11 @@ const useEffect = (effect, deps) => {
 const useMemo = (compute, deps) => {
     let hookNode = regression ? previewNode : currentComponent.hookNode;
 
+    if (regression) {
+        previewNode = hookNode.next = hookNode.next || { next: null };
+        return undefined;
+    }
+
     const prev = hookNode?.value;
 
     const hasNoDeps = !deps;
@@ -304,40 +346,32 @@ const useMemo = (compute, deps) => {
     if (hasNoDeps || hasChanged) {
         const value = compute();
         hookNode.value = { value, deps };
-        if (regression) {
-            previewNode = hookNode.next = hookNode.next || { next: null };
-        } else {
-            currentComponent.hookNode = hookNode.next = hookNode.next || {
-                next: null,
-            };
-        }
+        currentComponent.hookNode = hookNode.next = hookNode.next || {
+            next: null,
+        };
         return value;
     }
 
-    if (regression) {
-        previewNode = hookNode.next = hookNode.next || { next: null };
-    } else {
-        currentComponent.hookNode = hookNode.next = hookNode.next || { next: null };
-    }
+    currentComponent.hookNode = hookNode.next = hookNode.next || { next: null };
     return prev.value;
 };
 
-function onReady(cb) {
+function onReady(cb, delay = 1000) {
     while (true) {
         if (document.readyState == "complete") {
             setTimeout(() => {
                 cb();
-            }, 300);
+            }, delay);
             break;
         }
     }
 }
 /**
- * 
- * @param {Function} fn 
- * @param {String} target 
- * @param {String} id 
- * @returns 
+ *
+ * @param {Function} fn
+ * @param {String} target
+ * @param {String} id
+ * @returns
  */
 function createRoot(fn, target, id = "default") {
     const comp = {
@@ -368,8 +402,9 @@ function createRoot(fn, target, id = "default") {
                 } catch (error) {
                     console.error(error);
                 }
-                onReady(executeJobs);
             });
+
+            onReady(executeJobs, 300);
         },
     };
     comp.rerender();
@@ -393,5 +428,5 @@ export {
     setRegression,
     triggerRerender,
     getData,
-    bulkSetState
+    bulkSetState,
 };
