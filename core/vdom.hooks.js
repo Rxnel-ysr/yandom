@@ -4,10 +4,10 @@ import { RenderVDOM, executeJobs, getTarget } from "./vdom.js";
 
 let currentComponent = null,
     previewNode = { next: null },
-    headPreview = previewNode,
     regression = false,
     handler = null,
-    disableRerender = false;
+    disableRerender = false,
+    renderDebounce = null;
 
 const resetContext = () => {
     currentComponent.hookNode = currentComponent.hooks;
@@ -38,15 +38,8 @@ const forgot = (n = 1) => {
 };
 
 const resetPreview = () => {
-    if (previewNode) {
-        previewNode = headPreview;
-    }
-    let current = headPreview;
-
-    while (current?.next) {
-        current.value = undefined;
-        current = current.next;
-    }
+    previewNode = null
+    previewNode = { next: null };
 };
 
 const trailMaker = (n = 1) => {
@@ -357,15 +350,15 @@ const useMemo = (compute, deps) => {
 };
 
 function onReady(cb, delay = 1000) {
-    while (true) {
-        if (document.readyState == "complete") {
-            setTimeout(() => {
-                cb();
-            }, delay);
-            break;
-        }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(cb, delay);
+        });
+    } else {
+        setTimeout(cb, delay);
     }
 }
+
 /**
  *
  * @param {Function} fn
@@ -386,7 +379,11 @@ function createRoot(fn, target, id = "default") {
         renderFn: fn,
         setRenderFn: (fn) => (comp.renderFn = fn),
         rerender: () => {
-            requestAnimationFrame(() => {
+            if (renderDebounce) {
+                clearTimeout(renderDebounce)
+            }
+            const timer = setTimeout(() => {
+                renderDebounce = null
                 try {
                     handler = comp.rerender;
                     currentComponent = comp;
@@ -400,10 +397,13 @@ function createRoot(fn, target, id = "default") {
                     }
                     setHooks(id, comp.hooks);
                 } catch (error) {
+                    comp.target.innerHTML = `<pre>${error.stack}</pre>`;
                     console.error(error);
                 }
-            });
 
+            }, 50);
+
+            renderDebounce = timer;
             onReady(executeJobs, 300);
         },
     };

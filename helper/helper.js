@@ -1,6 +1,24 @@
 "use strict";
 import env from /** Skip */ '../../env.json' with {type: 'json'}
 
+class FileReader {
+    constructor(basePath = '') {
+        this.basePath = basePath;
+    }
+
+    async getFileAsString(filename) {
+        const url = `${this.basePath}/${filename}`.replace(/\/+/g, '/');
+        const response = await fetch(url);
+        return await response.text();
+    }
+}
+
+const fileReader = new FileReader(window.location.pathname);
+
+const getFileAsString = async (filename) => {
+    return await fileReader.getFileAsString(filename)
+}
+
 /**
  * 
  * @param {String} uri
@@ -61,4 +79,25 @@ const currentUri = (withHash = false) => {
     return res;
 };
 
-export { file, ltrim, rtrim, trim, currentUri }
+/**
+ * Generate RFC 4122–compliant UUID v4.
+ * Uses Web Crypto. Secure. Collision-safe.
+ *
+ * @returns {string} UUID v4
+ */
+const uuidv4 = () =>  {
+    const b = crypto.getRandomValues(new Uint8Array(16));
+
+    // RFC 4122 compliance
+    b[6] = (b[6] & 0x0f) | 0x40; // version 4
+    b[8] = (b[8] & 0x3f) | 0x80; // variant 10
+
+    return (
+        [...b].map((v, i) =>
+            ([4, 6, 8, 10].includes(i) ? "-" : "") +
+            v.toString(16).padStart(2, "0")
+        ).join("")
+    );
+}
+
+export { file, ltrim, rtrim, trim, currentUri, uuidv4, FileReader, getFileAsString }
