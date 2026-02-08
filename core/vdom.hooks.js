@@ -19,24 +19,6 @@ const triggerRerender = () => {
 
 const setRegression = (bool) => (regression = bool);
 
-/**
- * Forgets the next n states in the hook chain
- * @param {number} [n=1] - Number of subsequent hook states to forget
- */
-const forgot = (n = 1) => {
-    if (regression) return;
-
-    if (!currentComponent) return;
-
-    let hookNode = currentComponent.hookNode;
-    if (!hookNode) return;
-
-    for (let i = 1; i <= n && hookNode.next; i++) {
-        delete hookNode?.value;
-        hookNode = hookNode.next;
-    }
-};
-
 const resetPreview = () => {
     previewNode = null
     previewNode = { next: null };
@@ -50,6 +32,24 @@ const trailMaker = (n = 1) => {
     }
 
     return [head, node];
+};
+
+/**
+ * Forgets the next n states in the hook chain
+ * @param {number} [n=1] - Number of subsequent hook states to forget
+ */
+const resets = (n = 1) => {
+    if (regression) return;
+
+    if (!currentComponent) return;
+
+    let hookNode = currentComponent.hookNode;
+    if (!hookNode) return;
+
+    for (let i = 1; i <= n && hookNode.next; i++) {
+        hookNode.value = undefined;
+        hookNode = hookNode.next;
+    }
 };
 
 const allocate = (n) => {
@@ -66,10 +66,14 @@ const allocate = (n) => {
 /**
  *
  * @param {any[]} array
+ * @param {Boolean} recompute
  */
-const overwrite = (array) => {
+const overwrite = (array, recompute = false) => {
     let start = currentComponent.hookNode;
     array.map((e) => {
+        if (recompute && typeof e?.recompute !== 'undefined') {
+            e.recompute = true;
+        }
         start.value = e;
         start = start.next;
     });
@@ -83,28 +87,8 @@ const orphan = (n) => {
     for (let i = 1; i <= n; i++) {
         end = end.next = end.next;
     }
-    delete start.next;
+    start.next = undefined;
     start.next = end?.next || null;
-};
-
-const retainData = (nChild, vdom) => {
-    if (!currentComponent) return;
-
-    const hookNode = currentComponent.hookNode;
-    if (!hookNode) return;
-
-    const key = JSON.stringify(vdom);
-    let n = 0;
-
-    if (!hookNode.retained) hookNode.retained = { data: {} };
-    if (!hookNode.retained.data[key]) hookNode.retained.data[key] = [];
-
-    let current = hookNode.next;
-    while (n < nChild && current) {
-        hookNode.retained.data[key].push(current?.value);
-        current = current.next;
-        n++;
-    }
 };
 
 const getData = (until) => {
@@ -125,6 +109,11 @@ const getData = (until) => {
     return data;
 };
 
+const getCurrentHookNode = () => {
+    if (!currentComponent) return;
+    return currentComponent.hookNode;
+}
+
 /**
  * Component factory with hook tracking and optional memoization.
  *
@@ -132,45 +121,57 @@ const getData = (until) => {
  * @template R
  *
  * @param {(args: A) => R} compFn
- * Component render function. Must be pure. Receives `options.args`.
+ * Component render function. Must be pure. Receives `args`.
+ * 
+ * @param {A} args
+ * Args that will be passed on th `compFn`
  *
  * @param {{
  *   name?: string | null,
  *   hook?: number | null,
- *   args?: A
+ *   remember: boolean,
+ *   recompute: boolean,
+ *   invalidAfter: number
  * }} [options]
  * Component configuration object.
  * - `name`: Optional component identifier.
  * - `hook`: Optional hooks count inside `compFn`.
- * - `args`: Arguments passed into `compFn`.
- *
- * @param {boolean} [remember=false]
- * Enables component result persistence (memoization / retention).
+ * - `remember`: Optional, decide should state retained or not.
+ * - `recompute`: Optional, decide should empty dependency useEffect will recompute or no.
+ * - `invalidAfter`: Optional, decide how many millisecond into invalidation of state stored, 0 to never invalidate.
  *
  * @returns {{
  *   render: () => R,
  *   isComp: true,
  *   compHooks: number,
  *   stringified: string,
- *   remember: boolean
+ *   remember: boolean,
+ *   recompute: boolean,
+ *   invalidAfter: number
  * }}
  * Component descriptor object.
  */
 const comp = (
     compFn,
+    args = {},
     options = {
         name: null,
         hook: null,
-        args: {}
+        remember: false,
+        recompute: false,
+        invalidAfter: 500
     },
-    remember = false
 ) => {
     let name;
     let counter = 0;
     let result = {
-        render: () => compFn(options.args),
+        render: () => compFn(args),
         isComp: true,
-        remember
+        remember: options.remember,
+        recompute: options.recompute,
+        invalidAfter: options.invalidAfter,
+        stringified: null,
+        compHooks: null
     };
 
     if (!options.hook && !options.name) {
@@ -178,7 +179,7 @@ const comp = (
 
         regression = true;
 
-        const vdom = compFn(options.args);
+        const vdom = compFn(args);
 
         result.vnode = vdom;
 
@@ -278,8 +279,13 @@ const useRef = (initial) => {
     currentComponent.hookNode = hookNode.next = hookNode.next || { next: null };
     return hookNode?.value;
 };
-
-const useEffect = (effect, deps) => {
+/**
+ * 
+ * @param {Function} effect 
+ * @param {String[]} deps 
+ * @returns 
+ */
+const useEffect = (effect, deps = null) => {
     let hookNode = regression ? previewNode : currentComponent.hookNode;
 
     if (regression) {
@@ -292,7 +298,7 @@ const useEffect = (effect, deps) => {
     const oldHook = hookNode?.value;
     const hasChangedDeps =
         typeof oldHook !== "undefined"
-            ? !deps.every((dep, j) => Object.is(dep, oldHook.deps[j]))
+            ? (oldHook?.recompute || !deps.every((dep, j) => Object.is(dep, oldHook.deps[j])))
             : true;
 
     if (hasNoDeps || hasChangedDeps) {
@@ -304,7 +310,7 @@ const useEffect = (effect, deps) => {
 
         queueMicrotask(() => {
             const cleanup = effect();
-            hookNode.value = { deps, cleanup };
+            hookNode.value = { deps, cleanup, recompute: false };
         });
     } else {
         hookNode.value = oldHook;
@@ -381,9 +387,9 @@ function createRoot(fn, target, id = "default") {
         rerender: () => {
             if (renderDebounce) {
                 clearTimeout(renderDebounce)
-            }
-            const timer = setTimeout(() => {
                 renderDebounce = null
+            }
+            renderDebounce = setTimeout(() => {
                 try {
                     handler = comp.rerender;
                     currentComponent = comp;
@@ -401,9 +407,8 @@ function createRoot(fn, target, id = "default") {
                     console.error(error);
                 }
 
-            }, 50);
+            }, 5);
 
-            renderDebounce = timer;
             onReady(executeJobs, 300);
         },
     };
@@ -418,9 +423,9 @@ export {
     useMemo,
     useRef,
     createRoot,
-    forgot,
+    resets,
+    getCurrentHookNode,
     destroy,
-    retainData,
     comp,
     allocate,
     orphan,

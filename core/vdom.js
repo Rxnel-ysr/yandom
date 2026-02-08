@@ -1,9 +1,8 @@
 "use strict";
-import { allocate, forgot, getData, orphan, overwrite } from "./vdom.hooks.js";
+import { allocate, orphan, overwrite, getCurrentHookNode } from "./vdom.hooks.js";
 import { memorize, recall, remembered } from "./memory.js"
 
-let jobs = [],
-    memoryInvalidateAfter = 60000;
+let jobs = [];
 const _keys = {};
 const getKey = (vnode) => vnode?.props?.key ?? null;
 const hasKey = (vnode) => vnode && typeof vnode.props?.key !== "undefined";
@@ -17,17 +16,21 @@ const pushJob = (fn) => {
     jobs.push(fn);
 };
 
-const executeJobs =  () => {
+const executeJobs = () => {
     requestAnimationFrame(() => {
         for (const job of jobs) job();
         jobs.length = 0;
     });
 };
 
-
+/**
+ * 
+ * @param {Array} children 
+ * @returns 
+ */
 const flattenChildren = (children) =>
     children
-        .flat(512)
+        .flat(10)
         .filter((c) => c !== false && c !== null && c !== undefined);
 
 const createVNode = (tag, props = {}, ...children) => {
@@ -211,7 +214,6 @@ const renderVNode = (vnode, parentIsSvg = false) => {
         ? document.createElementNS("http://www.w3.org/2000/svg", work.tag)
         : document.createElement(work.tag);
 
-    // Set ref after element is created but before children are added
     const ref = work.props?.ref;
     if (ref && el) {
         updateRef(ref, el);
@@ -219,7 +221,7 @@ const renderVNode = (vnode, parentIsSvg = false) => {
 
     for (const [key, value] of Object.entries(work.props)) {
         if (key === "useCleanup" && typeof value === "function") continue;
-        if (key === "ref") continue; // Already handled above
+        if (key === "ref") continue; // Already handled
         if (key === "key") setKey(value, work);
 
         if (key === "class") {
@@ -327,55 +329,140 @@ const patchChildrenWithKeys = (parent, oldChildren, newChildren) => {
     return updatedChildren;
 };
 
+/**
+ * Handle component's state management
+ * 
+ * @param {Object} old 
+ * @param {Object} replacement 
+ */
+const handleComponentState = (old, replacement) => {
+    let oldHookCount = old.compHooks,
+        replacementHookCount = replacement.compHooks;
+
+    let current = getCurrentHookNode();
+    let store = new Array(oldHookCount);
+    let storedMemory = [];
+    if (replacement.remember && remembered(replacement.stringified)) {
+        storedMemory = recall(replacement.stringified);
+    }
+
+    for (let i = 0; i < Math.max(oldHookCount, replacementHookCount); i++) {
+        if (i > oldHookCount) {
+            current = { next: current.next }
+        } else {
+            if (old.remember) {
+                store[i] = current.value
+            }
+        }
+
+        current.value = undefined
+
+        if (replacement.remember) {
+            current.value = storedMemory[i]
+            if (replacement.recompute && typeof current.value?.recompute !== 'undefined') {
+                current.value.recompute = true;
+            }
+        }
+        
+
+        current = current.next
+    }
+
+    if (oldHookCount > replacementHookCount) {
+        orphan(old.compHooks - replacement.compHooks)
+    }
+
+    memorize(old.stringified, store, old.invalidAfter)
+}
+
+/**
+ * Handle component's state retrieval
+ * 
+ * @param {Object} component 
+ */
+const handleComponentRetrieval = (component) => {
+    let data = new Array(component.compHooks);
+    let current = getCurrentHookNode();
+
+    for (let i = 0; i < component.compHooks; i++) {
+        if (component.remember) {
+            data[i] = current.value
+        }
+        current.value = undefined
+        current = current.next
+    }
+
+    orphan(component.compHooks - 1)
+
+    if (component.remember) {
+        memorize(component.stringified, data, component.invalidAfter)
+    }
+}
+
+/**
+ * Handle component's state application
+ * 
+ * @param {Object} component 
+ */
+const handleComponentApplyState = (component) => {
+    allocate(component.compHooks - 1);
+    if (component.remember && remembered(component.stringified)) {
+        overwrite(recall(component.stringified), component.recompute)
+    }
+}
+
 const handleComponent = (parent, old, newOne) => {
     if (old?.isComp && newOne?.isComp) {
         // console.log(old, newOne)
         if (old.stringified !== newOne.stringified) {
-            if (old.compHooks > newOne.compHooks) {
-                if (old.remember) {
-                    memorize(old.stringified, getData(old.compHooks), memoryInvalidateAfter)
-                }
-                forgot(old.compHooks);
-                orphan(old.compHooks - newOne.compHooks);
-                if (newOne.remember && remembered(newOne.stringified)) {
-                    overwrite(recall(newOne.stringified))
-                }
-            } else if (old.compHooks < newOne.compHooks) {
-                if (old.remember) {
-                    memorize(old.stringified, getData(old.compHooks), memoryInvalidateAfter)
-                }
-                forgot(old.compHooks);
-                allocate(newOne.compHooks - old.compHooks);
-                if (newOne.remember && remembered(newOne.stringified)) {
-                    overwrite(recall(newOne.stringified))
-                }
-            } else {
-                if (old.remember) {
-                    memorize(old.stringified, getData(old.compHooks), memoryInvalidateAfter)
-                }
-                forgot(old.compHooks);
-                if (newOne.remember && remembered(newOne.stringified)) {
-                    overwrite(recall(newOne.stringified))
-                }
-            }
+            handleComponentState(old, newOne)
+            // if (old.compHooks > newOne.compHooks) {
+            // if (old.remember) {
+            //     memorize(old.stringified, getData(old.compHooks), old.invalidAfter)
+            // }
+            // resets(old.compHooks);
+            // orphan(old.compHooks - newOne.compHooks);
+            // if (newOne.remember && remembered(newOne.stringified)) {
+            //     overwrite(recall(newOne.stringified), newOne.recompute)
+            // }
+            // } else if (old.compHooks < newOne.compHooks) {
+            // if (old.remember) {
+            //     memorize(old.stringified, getData(old.compHooks), old.invalidAfter)
+            // }
+            // resets(old.compHooks);
+            // allocate(newOne.compHooks - old.compHooks);
+            // if (newOne.remember && remembered(newOne.stringified)) {
+            //     overwrite(recall(newOne.stringified), newOne.recompute)
+            // }
+            // } else {
+            // if (old.remember) {
+            //     memorize(old.stringified, getData(old.compHooks), old.invalidAfter)
+            // }
+            // resets(old.compHooks);
+            // if (newOne.remember && remembered(newOne.stringified)) {
+            //     overwrite(recall(newOne.stringified), newOne.recompute)
+            // }
+            // }
         }
 
 
         newOne.vdom = patch(parent, old.vdom, newOne.render(), true);
         return newOne;
     } else if (old?.isComp && !newOne?.isComp) {
-        if (old.remember) {
-            memorize(old.stringified, getData(old.compHooks), memoryInvalidateAfter)
-        }
-        forgot(old.compHooks);  
-        orphan(old.compHooks - 1);
+        handleComponentRetrieval(old)
+        // if (old.remember) {
+        //     memorize(old.stringified, getData(old.compHooks), old.invalidAfter)
+        // }
+        // resets(old.compHooks);  
+        // orphan(old.compHooks - 1);
 
         return patch(parent, old.vdom, newOne, true);
     } else if (!old?.isComp && newOne?.isComp) {
-        allocate(newOne.compHooks - 1);
-        if (newOne.remember && remembered(newOne.stringified)) {
-            overwrite(recall(newOne.stringified))
-        }
+        handleComponentApplyState(newOne)
+        // allocate(newOne.compHooks - 1);
+        // if (newOne.remember && remembered(newOne.stringified)) {
+        //     overwrite(recall(newOne.stringified), newOne.recompute)
+        // }
 
         newOne.vdom = patch(parent, old, newOne.render(), true);
         return newOne;
@@ -477,7 +564,6 @@ const patch = (parent, oldNode, newNode, skip = false) => {
         return newNode;
     }
 
-    // Update props (including ref) before proceeding
     updateProps(oldNode.el, oldNode.props || {}, newNode.props || {});
 
     if (
@@ -535,7 +621,12 @@ const __ = (tag, props = {}, ...children) => {
     const vnode = createVNode(tag, props, children);
     return renderVNode(vnode);
 };
-
+/**
+ * 
+ * @param {String} t 
+ * @param {Document} scope 
+ * @returns 
+ */
 const getTarget = (t, scope = document) => {
     if (t instanceof Node) {
         return t;

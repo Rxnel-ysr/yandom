@@ -99,25 +99,59 @@ class Router {
      * @returns {Object} Component
      */
     routerView = (args = {}, path = location.pathname) => {
-        let route = this.routes[path];
-        // console.log(path, route);
-        if (route) {
-            if (this.option?.titleId && route?.title) {
-                if (!this.option?.titleEl) {
-                    this.option.titleEl = document.getElementById(this.option.titleId);
+        if (this.routes[path] || false) {
+            return this._render(this.routes[path], args);
+        }
+
+        const pathSegs = path.split('/').filter(Boolean);
+
+        for (const routePath in this.routes) {
+            const routeSegs = routePath.split('/').filter(Boolean);
+            if (routeSegs.length !== pathSegs.length) continue;
+
+            const params = {};
+            let matched = true;
+
+            for (let i = 0; i < routeSegs.length; i++) {
+                const r = routeSegs[i];
+                const p = pathSegs[i];
+
+                if (r.startsWith(':')) {
+                    params[r.slice(1)] = decodeURIComponent(p);
+                } else if (r !== p) {
+                    matched = false;
+                    break;
                 }
-                this.option.titleEl.innerText = route.title;
             }
-            // console.log(route.component(args))
-            try {
-                return route.component(args);
-            } catch (error) {
-                return html.p(`There was an error...: ${error}`);
+
+            if (matched) {
+                return this._render(this.routes[routePath], {
+                    ...args,
+                    ...params
+                });
             }
-        } else if (typeof this.option?.default == "function") {
+        }
+
+        if (typeof this.option?.default === 'function') {
             return this.option.default();
         }
+
+        return html.p('404 Not Found');
     };
+
+    _render(route, args) {
+        if (this.option?.titleId && route?.title) {
+            this.option.titleEl ??= document.getElementById(this.option.titleId);
+            this.option.titleEl.innerText = route.title;
+        }
+
+        try {
+            return route.component(args);
+        } catch (e) {
+            return html.p(`Render error: ${e}`);
+        }
+    }
+
 
     /**
      *
