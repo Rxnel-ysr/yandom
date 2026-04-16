@@ -455,7 +455,11 @@ function createRoot(root) {
          * @returns Object
          */
         use(any) {
-            any.prepare()
+            if ('prepare' in any) {
+                any.prepare()
+            } else {
+                throw Error("Incompatible mod type.")
+            }
             return comp;
         },
         hooks: { next: null },

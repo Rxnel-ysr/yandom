@@ -59,6 +59,9 @@ const createVNode = (tag, props = {}, ...children) => {
 };
 
 function wrapPrimitive(node) {
+    if (typeof node == 'function') {
+        node = node();
+    }
     if (["string", "number"].includes(typeof node)) {
         const text = String(node);
         return {
@@ -272,16 +275,8 @@ const renderVNode = (vnode, parentIsSvg = false) => {
         : [work.children];
 
     for (let child of children) {
-        if (child === null || child === undefined || typeof child === "boolean")
+        if (child === null || child === undefined)
             continue;
-
-        if (child.tag == "#fragment") {
-            for (let frag of child.children) {
-                el.appendChild(renderVNode(frag, isSvg));
-            }
-            continue;
-        }
-
         el.appendChild(renderVNode(child, isSvg));
     }
 
@@ -675,7 +670,17 @@ const registerVdom = (tag, resolver) => {
  * More direct way to create vnode
  */
 function vnode(tag, props, ...children) {
-    return createVNode(tag, props, [props?.children, ...children])
+    let propType = typeof props;
+
+    if (propType === "string" || propType === "number") {
+        return createVNode(tag, {}, [props]);
+    } else if (Array.isArray(props)) {
+        return createVNode(tag, {}, props);
+    } else if (children.length == 0 && props?.tag) {
+        return createVNode(tag, {}, props);
+    } else {
+        return createVNode(tag, props, ...children);
+    }
 }
 
 /**
@@ -762,6 +767,7 @@ const html = new Proxy(
                 $: (...children) => ({
                     tag: "#fragment",
                     children: flattenChildren(children).map(wrapPrimitive),
+                    isComp: false,
                 }),
 
                 ...customVdom,
