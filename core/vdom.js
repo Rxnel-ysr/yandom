@@ -18,7 +18,7 @@ const pushJob = (fn) => {
 };
 
 const executeJobs = () => {
-    for (const job of jobs) requestAnimationFrame(job);
+    for (const job of jobs) job();
 
     jobs.length = 0;
 };
@@ -48,7 +48,6 @@ const createVNode = (tag, props = {}, ...children) => {
         props.keyed = true;
     }
 
-
     return {
         tag,
         stringifiedProps: JSON.stringify(props),
@@ -69,6 +68,7 @@ function wrapPrimitive(node) {
             children: [text],
             props: {},
             el: document.createTextNode(text),
+            isComp: false
         };
     }
     return node;
@@ -500,6 +500,23 @@ const patch = (parent, oldNode, newNode, skip = false) => {
     }
 
     if (newNode == null) {
+        if (oldNode?.tag == '#fragment') {            
+            let node = oldNode.el;
+            const end = oldNode._end;
+
+            if (end == undefined) {
+                return null;
+            }
+            while (node && node !== end) {
+                const next = node.nextSibling;
+                parent.removeChild(node)
+                // console.log(node);
+                node = next;
+            }
+
+            return null;
+
+        }
         if (oldNode?.el) {
             cleanupVNode(oldNode);
             parent.removeChild(oldNode.el);
@@ -520,6 +537,27 @@ const patch = (parent, oldNode, newNode, skip = false) => {
             return newNode;
         }
 
+        if (oldNode?.tag == '#fragment') {
+            let node = oldNode.el;
+            const end = oldNode._end;
+
+            if (end == undefined) {
+                return null;
+            }
+
+            while (node && node !== end) {
+                const next = node.nextSibling;
+                parent.removeChild(node)
+                node = next;
+            }
+
+            const newEl = renderVNode(newNode);
+            parent.replaceChild(newEl, oldNode._end);
+            newNode.el = newEl;
+
+            return newNode;
+        }
+
         const newEl = renderVNode(newNode);
         if (oldNode?.el) {
             parent.replaceChild(newEl, oldNode.el);
@@ -532,6 +570,13 @@ const patch = (parent, oldNode, newNode, skip = false) => {
     }
 
     if (oldNode == null) {
+        // console.log(3, oldNode, newNode)
+        if (newNode.tag === "#fragment") {
+            const frag = renderVNode(newNode);
+            parent.appendChild(frag);
+            return newNode;
+        }
+
         const el = renderVNode(newNode);
         parent.appendChild(el);
         newNode.el = el;
@@ -648,15 +693,15 @@ const __ = (tag, props = {}, ...children) => {
 };
 /**
  * 
- * @param {String} t 
+ * @param {String|Document|Node} selector
  * @param {Document} scope 
  * @returns 
  */
-const getTarget = (t, scope = document) => {
-    if (t instanceof Node) {
+const getTarget = (selector, scope = document) => {
+    if (selector instanceof Node || selector instanceof Document) {
         return t;
     }
-    const target = scope.querySelector(t);
+    const target = scope.querySelector(selector);
     if (!target) throw new Error(`Target "${t}" not found`);
     return target;
 };
@@ -672,14 +717,14 @@ const registerVdom = (tag, resolver) => {
 function vnode(tag, props, ...children) {
     let propType = typeof props;
 
-    if (propType === "string" || propType === "number") {
+    if ((propType === "string" || propType === "number") && children.length == 0) {
         return createVNode(tag, {}, [props]);
     } else if (Array.isArray(props)) {
-        return createVNode(tag, {}, props);
+        return createVNode(tag, {}, props, children);
     } else if (children.length == 0 && props?.tag) {
         return createVNode(tag, {}, props);
     } else {
-        return createVNode(tag, props, ...children);
+        return createVNode(tag, props, children);
     }
 }
 
@@ -792,10 +837,10 @@ const html = new Proxy(
                  */
                 ((props = {}, ...children) => {
                     let propType = typeof props;
-                    if (propType === "string" || propType === "number") {
+                    if ((propType === "string" || propType === "number") && children.length == 0) {
                         return createVNode(tag, {}, [props]);
                     } else if (Array.isArray(props)) {
-                        return createVNode(tag, {}, props);
+                        return createVNode(tag, {}, props, children);
                     } else if (children.length == 0 && props?.tag) {
                         return createVNode(tag, {}, props);
                     } else {

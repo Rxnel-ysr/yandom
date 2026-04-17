@@ -470,31 +470,33 @@ function createRoot(root) {
         setRenderFn(fn) {
             comp.renderFn = fn;
         },
-        rerender: () => requestAnimationFrame(() => {
-            if (typeof renderDebounce == 'number') {
-                clearTimeout(renderDebounce)
-                renderDebounce = null
-            }
-            renderDebounce = setTimeout(() => {
-                try {
-                    resetContext();
-                    resetPreview();
-                    const newVNode = comp.renderFn();
-                    if (!comp.vdom) {
-                        comp.vdom = RenderVDOM.render(newVNode, comp.target);
-                    } else {
-                        comp.vdom = RenderVDOM.update(comp.target, comp.vdom, newVNode);
+        rerender() {
+            requestAnimationFrame(() => {
+                if (typeof renderDebounce == 'number') {
+                    clearTimeout(renderDebounce)
+                    renderDebounce = null
+                }
+                renderDebounce = setTimeout(() => {
+                    try {
+                        resetContext();
+                        resetPreview();
+                        const newVNode = comp.renderFn();
+                        if (!comp.vdom) {
+                            comp.vdom = RenderVDOM.render(newVNode, comp.target);
+                        } else {
+                            comp.vdom = RenderVDOM.update(comp.target, comp.vdom, newVNode);
+                        }
+
+                    } catch (error) {
+                        comp.target.innerHTML = `<pre>${error.stack}</pre>`;
+                        console.error(error);
                     }
 
-                } catch (error) {
-                    comp.target.innerHTML = `<pre>${error.stack}</pre>`;
-                    console.error(error);
-                }
+                }, 5);
 
-            }, 5);
-
-            onReady(executeJobs, 300);
-        }),
+                onReady(executeJobs, 300);
+            })
+        },
     };
     return comp;
 }
