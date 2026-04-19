@@ -1,3 +1,4 @@
+/// <reference path="../@types/vdom.js" />
 "use strict";
 import { allocate, orphan, overwrite, getCurrentHookNode } from "./vdom.hooks.js";
 import { memorize, recall, remembered } from "./memory.js"
@@ -13,15 +14,18 @@ const setKey = (key, vnode) => (_keys[key] = vnode.el);
  *
  * @param {Function} fn
  */
-const pushJob = (fn) => {
+function pushJob(fn) {
     jobs.push(fn);
 };
 
-const executeJobs = () => {
+function executeJobs() {
     for (const job of jobs) job();
-
     jobs.length = 0;
 };
+
+function filterFalsy(c) {
+    return c !== false && c !== null && c !== undefined
+}
 
 /**
  * 
@@ -31,8 +35,14 @@ const executeJobs = () => {
 const flattenChildren = (children) =>
     children
         .flat(10)
-        .filter((c) => c !== false && c !== null && c !== undefined);
+        .filter(filterFalsy);
 
+/**
+ * @param {string} tag 
+ * @param {object} props 
+ * @param  {VNodeChild[] | VNodeChild[][]} children 
+ * @returns {VNode}
+ */
 const createVNode = (tag, props = {}, ...children) => {
     let flatten = flattenChildren(children);
     let keyed = false;
@@ -163,7 +173,7 @@ const updateProps = (el, oldProps, newProps) => {
                 el.style.cssText = "";
             } else if (key.startsWith("on") && typeof oldValue === "function") {
                 el.removeEventListener(key.slice(2).toLowerCase(), oldValue);
-            } else {
+            } else {    
                 el.removeAttribute(key);
             }
         } else if (oldValue !== newValue) {
@@ -434,59 +444,29 @@ const handleComponent = (parent, old, newOne) => {
         // console.log(old, newOne)
         if (old.stringified !== newOne.stringified) {
             handleComponentState(old, newOne)
-            // if (old.compHooks > newOne.compHooks) {
-            // if (old.remember) {
-            //     memorize(old.stringified, getData(old.compHooks), old.invalidAfter)
-            // }
-            // resets(old.compHooks);
-            // orphan(old.compHooks - newOne.compHooks);
-            // if (newOne.remember && remembered(newOne.stringified)) {
-            //     overwrite(recall(newOne.stringified), newOne.recompute)
-            // }
-            // } else if (old.compHooks < newOne.compHooks) {
-            // if (old.remember) {
-            //     memorize(old.stringified, getData(old.compHooks), old.invalidAfter)
-            // }
-            // resets(old.compHooks);
-            // allocate(newOne.compHooks - old.compHooks);
-            // if (newOne.remember && remembered(newOne.stringified)) {
-            //     overwrite(recall(newOne.stringified), newOne.recompute)
-            // }
-            // } else {
-            // if (old.remember) {
-            //     memorize(old.stringified, getData(old.compHooks), old.invalidAfter)
-            // }
-            // resets(old.compHooks);
-            // if (newOne.remember && remembered(newOne.stringified)) {
-            //     overwrite(recall(newOne.stringified), newOne.recompute)
-            // }
-            // }
         }
-
 
         newOne.vdom = patch(parent, old.vdom, newOne.render(), true);
         return newOne;
-    } else if (old?.isComp && !newOne?.isComp) {
+    } else if (old?.isComp && (!newOne?.isComp || newOne == null)) {
         handleComponentRetrieval(old)
-        // if (old.remember) {
-        //     memorize(old.stringified, getData(old.compHooks), old.invalidAfter)
-        // }
-        // resets(old.compHooks);  
-        // orphan(old.compHooks - 1);
 
         return patch(parent, old.vdom, newOne, true);
-    } else if (!old?.isComp && newOne?.isComp) {
+    } else if ((!old?.isComp || old == null) && newOne?.isComp) {
         handleComponentApplyState(newOne)
-        // allocate(newOne.compHooks - 1);
-        // if (newOne.remember && remembered(newOne.stringified)) {
-        //     overwrite(recall(newOne.stringified), newOne.recompute)
-        // }
 
         newOne.vdom = patch(parent, old, newOne.render(), true);
         return newOne;
     }
 };
-
+/**
+ * 
+ * @param {Element} parent 
+ * @param {VNode | null} oldNode 
+ * @param {VNode | null} newNode 
+ * @param {boolean} skip 
+ * @returns {VNode | null}
+ */
 const patch = (parent, oldNode, newNode, skip = false) => {
     if (oldNode == null && newNode == null) return null;
 
@@ -500,7 +480,7 @@ const patch = (parent, oldNode, newNode, skip = false) => {
     }
 
     if (newNode == null) {
-        if (oldNode?.tag == '#fragment') {            
+        if (oldNode?.tag == '#fragment') {
             let node = oldNode.el;
             const end = oldNode._end;
 
@@ -669,9 +649,17 @@ const patch = (parent, oldNode, newNode, skip = false) => {
     return newNode;
 };
 
-
+/**
+ * 
+ */
 const RenderVDOM = {
     createVNode,
+    /**
+     * 
+     * @param {VNode} vnode 
+     * @param {Element|string} container 
+     * @returns {VNode | null}
+     */
     render(vnode, container) {
         container =
             typeof container === "string" ? getTarget(container) : container;
@@ -706,10 +694,14 @@ const getTarget = (selector, scope = document) => {
     return target;
 };
 
-let customVdom = {};
+let customVDom = {};
 
+/**
+ * @param {string} tag
+ * @param {(props: object, ...children: VNodeChild[])} resolver
+ */
 const registerVdom = (tag, resolver) => {
-    customVdom[tag] = resolver;
+    customVDom[tag] = resolver;
 };
 /**
  * More direct way to create vnode
@@ -717,8 +709,8 @@ const registerVdom = (tag, resolver) => {
 function vnode(tag, props, ...children) {
     let propType = typeof props;
 
-    if ((propType === "string" || propType === "number") && children.length == 0) {
-        return createVNode(tag, {}, [props]);
+    if (propType === "string" || propType === "number") {
+        return createVNode(tag, {}, props, children);
     } else if (Array.isArray(props)) {
         return createVNode(tag, {}, props, children);
     } else if (children.length == 0 && props?.tag) {
@@ -738,7 +730,7 @@ function vnode(tag, props, ...children) {
  * - Fragment creation
  * - VDOM rendering passthrough
  *
- * @type {Proxy<Record<string, any>>}
+ * @type {HTMLProxy}
  *
  * @example
  * html.div({ class: "box" }, "Hello")
@@ -760,15 +752,6 @@ const html = new Proxy(
         get: (_, tag) => {
             /**
              * Built-in DSL actions.
-             *
-             * @type {{
-             *   mount: (el: Node, selector: string, scope?: ParentNode) => void,
-             *   push: (el: Node, selector: string, scope?: ParentNode) => void,
-             *   mountShadow: (el: Node, selector: string, scope?: ParentNode) => ShadowRoot,
-             *   vdom: Function,
-             *   _: Function,
-             *   $: (...children: any[]) => { tag: "#fragment", children: any[] }
-             * }}
              */
             const actions = {
                 /**
@@ -815,7 +798,7 @@ const html = new Proxy(
                     isComp: false,
                 }),
 
-                ...customVdom,
+                ...customVDom,
             };
 
             /**
@@ -826,7 +809,6 @@ const html = new Proxy(
              */
             return (
                 actions[tag] ||
-                customVdom[tag] ||
                 /**
                  * HTML element VNode factory.
                  *
@@ -837,8 +819,8 @@ const html = new Proxy(
                  */
                 ((props = {}, ...children) => {
                     let propType = typeof props;
-                    if ((propType === "string" || propType === "number") && children.length == 0) {
-                        return createVNode(tag, {}, [props]);
+                    if (propType === "string" || propType === "number") {
+                        return createVNode(tag, {}, props, children);
                     } else if (Array.isArray(props)) {
                         return createVNode(tag, {}, props, children);
                     } else if (children.length == 0 && props?.tag) {

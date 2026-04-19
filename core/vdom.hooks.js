@@ -129,7 +129,7 @@ const getCurrentHookNode = () => {
  * @template {Record<string, any>} A
  * @template R
  *
- * @param {(args: A) => R} compFn
+ * @param {(args: A) => R | VNode} compFn
  * Component render function. Must be pure. Receives `args`.
  * 
  * @param {A} args
@@ -150,7 +150,7 @@ const getCurrentHookNode = () => {
  * - `invalidAfter`: Optional, decide how many millisecond into invalidation of state stored, 0 to never invalidate.
  *
  * @returns {{
- *   render: () => R,
+ *   render: () => R | VNode,
  *   isComp: true,
  *   compHooks: number,
  *   stringified: string,
@@ -263,9 +263,10 @@ const destroy = () => {
  *
  * @template T
  * @param {T} initial - The initial state value.
+ * @param {Boolean} handleInputEvent - Automatically handle input event and take the value.
  * @returns {[T, (val: T | ((prev: T) => T)) => void]} A tuple: current state and a setter function.
  */
-const useState = (initial) => {
+const useState = (initial, handleInputEvent = false) => {
     let hookNode = regression ? previewNode : currentComponent?.hookNode;
 
     if (regression) {
@@ -278,6 +279,9 @@ const useState = (initial) => {
     }
 
     const set = (val) => {
+        if (handleInputEvent && val instanceof InputEvent) {
+            val = val.target.value
+        }
         hookNode.value = typeof val == "function" ? val(hookNode?.value) : val;
 
         if (!regression && !disableRerender) {

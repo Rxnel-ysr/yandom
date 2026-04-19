@@ -1,21 +1,22 @@
+// @ts-check
 "use strict";
 
 /**
- * MemoryManager - A class-based memory system with validation and dependency tracking
+ * Memory - A class-based memory system with validation and dependency tracking
  */
-class MemoryManager {
+class Memory {
     /**
      * Create a new MemoryManager instance
+     * @param {number} autoCleanupInterval
      */
-    constructor() {
+    constructor(autoCleanupInterval = 300000) {
         this.Memory = new Map();
         this.ValidationQueue = new Set();
         this.Validators = new Map();
         this.isValidationRunning = false;
         this._cleanupInterval = null;
 
-        // Auto cleanup every 5 minutes
-        this.startAutoCleanup(300000);
+        this.startAutoCleanup(autoCleanupInterval);
     }
 
     /**
@@ -46,7 +47,7 @@ class MemoryManager {
      * @param {any} definition - component identity key
      * @param {any} value - state snapshot
      * @param {number} ttl - milliseconds (0 = no expiry)
-     * @param {Function} [onInvalidate] - optional callback when value is invalidated
+     * @param {Function|null} [onInvalidate] - optional callback when value is invalidated
      */
     memorize(definition, value, ttl = 0, onInvalidate = null) {
         const expiresAt = ttl > 0 ? Date.now() + ttl : 0;
@@ -581,4 +582,4 @@ class MemoryManager {
     }
 }
 
-export default MemoryManager;
+export default Memory;

@@ -1,44 +1,70 @@
+// @ts-check
+/// <reference path="../@types/router.js" />
 "use strict";
-import { currentUri } from "../helper/helper.js";
-import { triggerRerender } from "./vdom.hooks.js";
+import { currentUri, ltrim } from "../helper/helper.js";
+import { comp, triggerRerender } from "./vdom.hooks.js";
 import { createVNode, html, pushJob, registerVdom } from "./vdom.js";
+import Memory from "./memory-class.js";
+
+let gParams = null;
+
+function useParam() {
+    return gParams;
+}
+
+/**
+ * @param {any} v
+ * @returns {v is LazyComponent}
+ */
+function isLazy(v) {
+    return v !== null && typeof v === 'object' && v.lazy === true;
+}
+
+/**
+ * 
+ * @param {() => Promise<{ default: VNodeFunction }>} importFn 
+ * @returns {LazyComponent}
+ */
+function lazyLoad(importFn) {
+    return {
+        lazy: true,
+        importFn,
+        importedFn: undefined
+    }
+}
 
 class Router {
+    /** @type {Record<string, RouteComponent>} */
     routes = {};
+
+    /** @type {Function} */
+    trigger;
     errors = {};
     element = 'a';
-    option = {
-        prefix: "",
-        default: null,
-        titleId: null,
-        titleEl: null,
-    };
+    cache = new Memory(1000);
+    elementProps = {};
+    cachePath = '';
+    /**
+     * @type {RouterOptions}
+     */
+    option;
 
     prepare() {
         this.use(triggerRerender)
+        // setInterval(() => {
+        //     console.log(this.cache.getStats(), this.cache.getInternalState())
+        // }, 5000)
     }
-
     /**
-     * @template {{
-     *  prefix: String|null,
-     *  element: String|null
-     *  default: Function|null,
-     *  routes: Array<{
-     *      uri: String,
-     *      title: String|null,
-     *      component: Function
-     *  }>
-     * }} T
-     *
-     * @param {T} option
+     * @param {RouterOptions} option
      */
-    static make(option = {}) {
+    static make(option) {
         return new Router(option);
     };
 
     /**
      *
-     * @param {String} hash
+     * @param {string} hash
      * @returns
      */
     scrollToHash(hash) {
@@ -49,27 +75,31 @@ class Router {
     };
 
     /**
-     * @template {{
-     *  prefix: String|null,
-     *  default: Function|null,
-     *  element: String|null
-     *  routes: Array<{
-     *      uri: String,
-     *      title: String|null,
-     *      component: Function
-     *  }>
-     * }} T
-     *
-     * @param {T} option
+     * @param {RouterOptions} option
      */
-    constructor(option = {}) {
+    constructor(option) {
         this.option = option;
         if (Array.isArray(option?.routes)) {
             option.routes.forEach((route) => {
                 this.register(route.uri, {
                     component: route.component,
                     title: route?.title,
+                    setting: route?.setting,
+                    static: route?.static,
+                    cacheExp: route?.cacheExp || this.option.cacheExp || 0
                 });
+
+                if (route.children) {
+                    route.children.forEach(subroute => {
+                        this.register(`${route.uri}/${ltrim(subroute.uri, '/')}`, {
+                            component: subroute.component,
+                            title: subroute?.title,
+                            setting: subroute?.setting,  // Changed from subroute?.comp
+                            static: subroute?.static,
+                            cacheExp: subroute?.cacheExp || this.option.cacheExp || 0
+                        })
+                    })
+                }
             });
         }
 
@@ -87,7 +117,7 @@ class Router {
             delete props.scrollTo
 
             return createVNode(this.element, {
-                ...props, onclick: (e) => {
+                ...this.elementProps, ...props, onclick: (e) => {
                     e.preventDefault()
                     let different = currentUri() !== destination;
                     // console.log("hm");
@@ -114,14 +144,13 @@ class Router {
 
     /**
      *
-     * @param {String} uri
-     * @param {() => Object} comp
-     * @returns
+     * @param {string} uri
+     * @param {RouteComponent} comp
+     * @returns {Router}
      */
     register(uri, comp) {
         if (this.option?.prefix) {
             uri = `${this.option?.prefix}${uri}`;
-            // console.log(uri);
         }
         this.routes[uri] = comp;
         return this;
@@ -129,7 +158,7 @@ class Router {
 
     /**
      *
-     * @param {String} uri
+     * @param {string} uri
      */
     go(uri) {
         // if (uri !== location.pathname) {
@@ -141,13 +170,27 @@ class Router {
 
     /**
      *
-     * @param {Object} [args={}]
-     * @param {String} [path=location.pathname]
-     * @returns {Object} Component
+     * @param {object} [args={}]
+     * @param {string} [path=location.pathname]
+     * @returns {VNode | VNodeComponent | string |  null } 
      */
     routerView(args = {}, path = location.pathname) {
+        let result = null;
+
+        this.cachePath = path
+
+        if (this.cache.remembered(path)) {
+            console.log('Cache hit', path);
+            return this.cache.recall(path);
+        }
+
+        console.log('Cache miss', path);
+
+
         if (this.routes[path] || false) {
-            return this._render(this.routes[path], args);
+            result = this._render(this.routes[path], args);
+            this.cache.memorize(path, result, this.routes[path].cacheExp)
+            return result;
         }
 
         const pathSegs = path.split('/').filter(Boolean);
@@ -172,30 +215,92 @@ class Router {
             }
 
             if (matched) {
-                return this._render(this.routes[routePath], {
+                gParams = params
+                result = this._render(this.routes[routePath], {
                     ...args,
                     ...params
                 });
+                this.cache.memorize(path, result, this.routes[routePath].cacheExp)
+                return result;
             }
         }
 
-        if (typeof this.option?.default === 'function') {
-            return this.option.default();
+        if (typeof this.option?.defaultRoute === 'function') {  // Changed from option.default
+            return this.option.defaultRoute();
         }
 
-        // return html.p('404 Not Found');
+        return result;
     };
 
+    /**
+     * 
+     * @param {RouteComponent} route
+     * @param {object} args 
+     * @returns {VNode | string | VNodeComponent}
+     */
     _render(route, args) {
         if (this.option?.titleId && route?.title) {
             this.option.titleEl ??= document.getElementById(this.option.titleId);
-            this.option.titleEl.innerText = route.title;
+            if (this.option.titleEl !== null) {
+                this.option.titleEl.innerText = route.title;
+            }
+        }
+
+        let component = route.component
+
+        if (route.static) {
+            try {
+                if (isLazy(component)) {
+                    if (component.importedFn) {
+                        return comp(component.importedFn, args, route.setting)
+                    }
+                    this._scheduleFetchComponent(this.cachePath, route, args);
+                    return '';
+                } else {
+                    return route.rendered = comp(component, args, route.setting);
+                }
+            } catch (e) {
+                return html.p(`Static render error: ${e}`);
+            }
         }
 
         try {
-            return route.component(args);
+            if (isLazy(component)) {
+                if (component.importedFn) {
+                    return comp(component.importedFn, args, route.setting)
+                }
+                this._scheduleFetchComponent(this.cachePath, route, args);
+                return '';
+            } else {
+                return comp(component, args, route.setting);
+            }
         } catch (e) {
             return html.p(`Render error: ${e}`);
+        }
+    }
+
+    /**
+     * 
+     * @param {string} path 
+     * @param {RouteComponent} route
+     * @param {object} args 
+     */
+    _scheduleFetchComponent(path, route, args) {
+        let lazyComponent = route.component;
+        if (isLazy(lazyComponent)) {
+            pushJob(async () => {
+                let realComponent = await lazyComponent.importFn();
+                let rendered = comp(realComponent.default, args, route.setting);
+
+                lazyComponent.importedFn = realComponent.default;
+                this.cache.forget(path);
+                this.cache.memorize(path, rendered, route.cacheExp)
+                if (location.pathname === path) {
+                    this.trigger()
+                }
+            })
+        } else {
+            console.error(lazyComponent, ' is VNode component, not lazy component.');
         }
     }
 
@@ -214,4 +319,4 @@ class Router {
 
 const create = Router.make;
 
-export { Router, create };
+export { Router, create, useParam, lazyLoad };
