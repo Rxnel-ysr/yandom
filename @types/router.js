@@ -18,12 +18,11 @@
 /**
  * @typedef {Object} Route
  * @property {string} uri
- * @property {string|null} [title]
  * @property {LazyComponent | VNodeFunction} component
- * @property {VNodeComponentSetting} [setting]  // Changed from 'comp' to 'setting' for consistency
+ * @property {VNodeComponentSetting} [setting]
+ * @property {string|null} [title]
  * @property {number} [cacheExp] 
  * @property {boolean} [static]
- * @property {Object|null} [renderedSetting]  // Renamed from 'setting' to avoid conflict
  * @property {Array<Route>} [children]
  */
 
@@ -31,11 +30,12 @@
  * Router option type declaration
  * @typedef {Object} RouterOptions
  * @property {string|null} [prefix]
- * @property {Function|null} [defaultRoute]  // Changed from 'default' (reserved word)
+ * @property {Function|null} [defaultRoute]
  * @property {string} [titleId] 
  * @property {number} [cacheExp] 
  * @property {HTMLElement|null} [titleEl] 
- * @property {Object} [elementProps]
+ * @property {Record<string, any>} [elementProps]
  * @property {string|null} [element]
- * @property {Array<Route>} routes
+ * @property {Array<Route>} [routes]
+ * @property {number} [cleanUpInterval]
  */

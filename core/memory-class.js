@@ -44,10 +44,11 @@ class Memory {
 
     /**
      * Store a value in memory with optional TTL and invalidation callback
+     * @template T
      * @param {any} definition - component identity key
-     * @param {any} value - state snapshot
+     * @param {T} value - state snapshot
      * @param {number} ttl - milliseconds (0 = no expiry)
-     * @param {Function|null} [onInvalidate] - optional callback when value is invalidated
+     * @param {null|((value?: T, reason?: string) => void)} [onInvalidate] - optional callback when value is invalidated
      */
     memorize(definition, value, ttl = 0, onInvalidate = null) {
         const expiresAt = ttl > 0 ? Date.now() + ttl : 0;

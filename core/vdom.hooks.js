@@ -1,6 +1,6 @@
 "use strict";
+import { value } from "../helper/helper.js";
 import { memorize, recall, remembered } from "./memory.js";
-import { getHooks, setHooks } from "./state.js";
 import { RenderVDOM, executeJobs, getTarget } from "./vdom.js";
 
 let currentComponent = null,
@@ -126,22 +126,13 @@ const getCurrentHookNode = () => {
 /**
  * Component factory with hook tracking and optional memoization.
  *
- * @template {Record<string, any>} A
- * @template R
- *
- * @param {(args: A) => R | VNode} compFn
+ * @param {VNodeFunction} compFn
  * Component render function. Must be pure. Receives `args`.
  * 
- * @param {A} args
+ * @param {object} args
  * Args that will be passed on th `compFn`
  *
- * @param {{
- *   name?: string | null,
- *   hook?: number | null,
- *   remember: boolean,
- *   recompute: boolean,
- *   invalidAfter: number
- * }} [options]
+ * @param {VNodeComponentSetting} [options]
  * Component configuration object.
  * - `name`: Optional component identifier.
  * - `hook`: Optional hooks count inside `compFn`.
@@ -149,15 +140,7 @@ const getCurrentHookNode = () => {
  * - `recompute`: Optional, decide should empty dependency useEffect will recompute or no.
  * - `invalidAfter`: Optional, decide how many millisecond into invalidation of state stored, 0 to never invalidate.
  *
- * @returns {{
- *   render: () => R | VNode,
- *   isComp: true,
- *   compHooks: number,
- *   stringified: string,
- *   remember: boolean,
- *   recompute: boolean,
- *   invalidAfter: number
- * }}
+ * @returns {VNodeComponent}
  * Component descriptor object.
  */
 const comp = (
@@ -176,9 +159,9 @@ const comp = (
     let result = {
         render: () => compFn(args),
         isComp: true,
-        remember: options.remember,
-        recompute: options.recompute,
-        invalidAfter: options.invalidAfter,
+        remember: value(options?.remember, false),
+        recompute: value(options?.recompute, false),
+        invalidAfter: value(options?.invalidAfter, 500),
         stringified: null,
         compHooks: null
     };
@@ -190,7 +173,7 @@ const comp = (
 
         const vdom = compFn(args);
 
-        result.vnode = vdom;
+        // result.vnode = vdom;
 
         regression = false;
 
@@ -213,7 +196,7 @@ const comp = (
 
             const vdom = compFn(args);
 
-            result.vnode = vdom;
+            // result.vnode = vdom;
 
             regression = false;
 
@@ -460,7 +443,7 @@ function createRoot(root) {
          */
         use(any) {
             if ('prepare' in any) {
-                any.prepare()
+                any.prepare(this)
             } else {
                 throw Error("Incompatible mod type.")
             }
@@ -469,8 +452,11 @@ function createRoot(root) {
         hooks: { next: null },
         hookNode: null,
         vdom: null,
+        /**@type {Element} */
         target: getTarget(root),
+        /** @type {Function} */
         renderFn: null,
+        /** @param {Function} fn */
         setRenderFn(fn) {
             comp.renderFn = fn;
         },

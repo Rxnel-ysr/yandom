@@ -6,7 +6,6 @@ import path from 'path';
 // import Url from 'url';
 import { createWSServer } from './webSock.js';
 import { watch } from '../core/file-watcher.js';
-import env from '../../env.json' with {type: 'json'}
 
 const root = process.cwd();
 const mimeTypes = {
@@ -40,44 +39,43 @@ const coreFiles = [
     'state.js'
 ];
 
-if (env.app.hmr.enabled) {
-    const { broadcast } = createWSServer(env.app.hmr.port);
-    let prev, prevRepeat = 1;
+const { broadcast } = createWSServer(4040);
+let prev, prevRepeat = 1;
 
-    watch(root, (filePath) => {
-        const relativePath = '/' + path.relative(root, filePath).replace(/\\/g, '/');
+watch(root, (filePath) => {
+    const relativePath = '/' + path.relative(root, filePath).replace(/\\/g, '/');
 
-        if (coreFiles.includes(path.basename(filePath))) return;
+    if (coreFiles.includes(path.basename(filePath))) return;
 
-        if (relativePath === prev) {
-            prevRepeat++;
-        } else {
-            prevRepeat = 1;
-            prev = relativePath;
-        }
+    if (relativePath === prev) {
+        prevRepeat++;
+    } else {
+        prevRepeat = 1;
+        prev = relativePath;
+    }
 
-        const time = new Date().toLocaleTimeString();
-        const emoji = prevRepeat > 1 ? '🔁' : '🔄';
+    const time = new Date().toLocaleTimeString();
+    const emoji = prevRepeat > 1 ? '🔁' : '🔄';
 
-        console.log(
-            `%c[HMR]%c ${emoji} ${relativePath}%c${prevRepeat > 1 ? ` (${prevRepeat}x)` : ''} %cat ${time}`,
-            'color: #42b883; font-weight: bold',
-            'color: #ffffff',
-            'color: #42b883; font-weight: bold',
-            'color: #888; font-style: italic'
-        );
+    console.log(
+        `%c[HMR]%c ${emoji} ${relativePath}%c${prevRepeat > 1 ? ` (${prevRepeat}x)` : ''} %cat ${time}`,
+        'color: #42b883; font-weight: bold',
+        'color: #ffffff',
+        'color: #42b883; font-weight: bold',
+        'color: #888; font-style: italic'
+    );
 
-        broadcast({
-            type: 'reload',
-            path: relativePath,
-            timestamp: Date.now()
-        });
-    }, {
-        ignore: [
-            '.git/'
-        ]
+    broadcast({
+        type: 'reload',
+        path: relativePath,
+        timestamp: Date.now()
     });
-}
+}, {
+    ignore: [
+        '.git/',
+        'DSL-VDOM/.git/'
+    ]
+});
 const hasExtension = (url) => /\.[^/]+$/.test(url)
 
 // Frontend server
@@ -167,6 +165,6 @@ function transformImports(code, importerFilePath) {
     return code;
 }
 
-server.listen(env.app.port, () => {
-    console.log('Frontend server running on http://localhost:3000');
+server.listen(5173, () => {
+    console.log('Frontend server running on http://localhost:5173');
 });

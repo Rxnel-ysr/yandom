@@ -72,6 +72,14 @@ const rtrim = (string, character) => {
  */
 const trim = (string, character) => rtrim(ltrim(string, character), character);
 
+/**
+ * @param {any} v 
+ * @param {any} defaultV 
+ * @returns {any}
+ */
+const value = (v, defaultV) => {
+    return typeof v == 'undefined' ? defaultV : v
+}
 
 const currentUri = (withHash = false) => {
     let res = withHash ? `${window.location.pathname}${window.location.hash}` : window.location.pathname
@@ -100,4 +108,4 @@ const uuidv4 = () =>  {
     );
 }
 
-export { file, ltrim, rtrim, trim, currentUri, uuidv4, FileReader, getFileAsString }
+export { file, ltrim, rtrim, trim, currentUri, uuidv4, FileReader, getFileAsString, value }

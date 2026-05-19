@@ -17,8 +17,9 @@
 
 /**
  * @typedef {Object} VNode
- * @property {boolean} isComp
+ * @property {false} isComp
  * @property {string} tag
+ * @property {object} props
  * @property {VNodeChild[]} children
  */
 
@@ -30,15 +31,16 @@
  *   stringified: string,
  *   remember: boolean,
  *   recompute: boolean,
- *   invalidAfter: number
+ *   invalidAfter: number,
+ *   vdom: VNode|undefined
  * }} VNodeComponent
  */
 
 /**
  * @typedef {Object} VNodeComponentSetting
- * @property {string} name
- * @property {number} hook
- * @property {boolean} recompute
- * @property {number} invalidAfter
- * @property {boolean} remember
+ * @property {string} [name]
+ * @property {number} [hook]
+ * @property {boolean} [recompute]
+ * @property {number} [invalidAfter]
+ * @property {boolean} [remember]
  */
