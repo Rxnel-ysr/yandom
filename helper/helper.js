@@ -22,12 +22,13 @@ const getFileAsString = async (filename) => {
 /**
  * 
  * @param {String} uri
- * @return url
+ * @return {string}
  */
-const file = (uri) => {
+function file(uri) {
     let res = '';
-    if (env.deploy) {
-        res = `${window.location.origin}/Baria/${uri}`
+    uri = ltrim(uri, '/');
+    if (env.deploy?.prod) {
+        res = `${window.location.origin}/${trim(value(env?.deploy?.base, ''), '/')}/${uri}`
     } else {
         res = `${window.location.origin}/${uri}`
 
@@ -40,10 +41,11 @@ const file = (uri) => {
  * @param {String} string 
  * @param {String} character 
  */
-const ltrim = (string, character) => {
-    let cutted = 0;
+function ltrim(string, character) {
+    let cutted = 0,
+        chars = Object.fromEntries(character.split('').map(e => [e, true]))
 
-    while (string[cutted] == character) {
+    while (chars[string[cutted]] ?? false) {
         cutted++
     }
 
@@ -55,10 +57,11 @@ const ltrim = (string, character) => {
  * @param {String} string 
  * @param {String} character 
  */
-const rtrim = (string, character) => {
-    let lastIndex = string.length - 1;
+function rtrim(string, character) {
+    let lastIndex = string.length - 1,
+        chars = Object.fromEntries(character.split('').map(e => [e, true]))
 
-    while (string[lastIndex] == character && lastIndex >= 0) {
+    while ((chars[string[lastIndex]] ?? false) && lastIndex >= 0) {
         lastIndex--
     }
 
@@ -70,18 +73,20 @@ const rtrim = (string, character) => {
  * @param {String} string 
  * @param {String} character 
  */
-const trim = (string, character) => rtrim(ltrim(string, character), character);
+function trim(string, character) {
+    return rtrim(ltrim(string, character), character);
+}
 
 /**
  * @param {any} v 
  * @param {any} defaultV 
  * @returns {any}
  */
-const value = (v, defaultV) => {
+function value(v, defaultV) {
     return typeof v == 'undefined' ? defaultV : v
 }
 
-const currentUri = (withHash = false) => {
+function currentUri(withHash = false) {
     let res = withHash ? `${window.location.pathname}${window.location.hash}` : window.location.pathname
     // console.log("CALLED", res);
     return res;
@@ -93,7 +98,7 @@ const currentUri = (withHash = false) => {
  *
  * @returns {string} UUID v4
  */
-const uuidv4 = () =>  {
+function uuidv4() {
     const b = crypto.getRandomValues(new Uint8Array(16));
 
     // RFC 4122 compliance

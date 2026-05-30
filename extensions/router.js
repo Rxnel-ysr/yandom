@@ -2,10 +2,10 @@
 /// <reference path="../@types/router.js" />
 
 "use strict";
-import { currentUri, ltrim, trim, value } from "../helper/helper.js";
-import { comp, triggerRerender } from "./vdom.hooks.js";
-import { createVNode, html, pushJob, registerVdom } from "./vdom.js";
-import Memory from "./memory-class.js";
+import { currentUri, trim, value } from "../helper/helper.js";
+import { comp, triggerRerender } from "../core/vdom.hooks.js";
+import { createVNode, html, pushJob, registerVdom } from "../core/vdom.js";
+import Memory from "../core/memory-class.js";
 
 /**
  * @param {any} v 
@@ -62,7 +62,7 @@ class RadixNode {
 class Router {
     /** @type {RadixNode} */
     root;
-    /** @type {Function} */
+    /** @type {Function|undefined} */
     trigger;
     /** @type {Record<string, any>} */
     errors = {};
@@ -87,7 +87,7 @@ class Router {
     /** @type {undefined |((to: string, from: string, next: Function) => void)} */
     middleware;
 
-    /** @type {Record<string, string | undefined>} */
+    /** @type {Record<string, string | undefined>|undefined} */
     proxy;
 
     /**
@@ -109,7 +109,7 @@ class Router {
             this.register(`/${trim(route.uri, '/')}`, {
                 component: route.component,
                 title: route?.title,
-                setting: route?.setting,
+                setting: route?.cache,
                 static: route?.static,
                 cacheExp: route?.cacheExp || this.option.cacheExp || 0
             });
@@ -119,7 +119,7 @@ class Router {
                     this.register(`/${trim(route.uri, '/')}/${trim(subroute.uri, '/')}`, {
                         component: subroute.component,
                         title: subroute?.title,
-                        setting: subroute?.setting,
+                        setting: subroute?.cache,
                         static: subroute?.static,
                         cacheExp: subroute?.cacheExp || this.option.cacheExp || 0
                     })
@@ -437,6 +437,7 @@ class Router {
      */
     go(uri) {
         history.pushState({ path: uri }, "", uri);
+        // @ts-ignore
         this.trigger();
     };
 
@@ -549,6 +550,7 @@ class Router {
         }
 
         let component = route.component
+        
 
         if (route.static) {
             try {
@@ -603,6 +605,7 @@ class Router {
                 this.cache.memorize(path, { rendered, params: args }, route.cacheExp)
 
                 if (location.pathname === path) {
+                    // @ts-ignore
                     this.trigger()
                 }
             })

@@ -19,7 +19,7 @@
  * @typedef {Object} Route
  * @property {string} uri
  * @property {LazyComponent | VNodeFunction} component
- * @property {VNodeComponentSetting} [setting]
+ * @property {VNodeComponentSetting} [cache]
  * @property {string|null} [title]
  * @property {number} [cacheExp] 
  * @property {boolean} [static]

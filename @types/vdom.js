@@ -21,6 +21,7 @@
  * @property {string} tag
  * @property {object} props
  * @property {VNodeChild[]} children
+ * @property {stringifiedProps} string
  */
 
 /**
@@ -32,7 +33,7 @@
  *   remember: boolean,
  *   recompute: boolean,
  *   invalidAfter: number,
- *   vdom: VNode|undefined
+ *   vdom: VNode|undefined|null
  * }} VNodeComponent
  */
 

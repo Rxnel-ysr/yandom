@@ -1,7 +1,12 @@
 /// <reference path="../@types/vdom.js" />
 "use strict";
-import { allocate, orphan, overwrite, getCurrentHookNode } from "./vdom.hooks.js";
-import { memorize, recall, remembered } from "./memory.js"
+import {
+    allocate,
+    orphan,
+    overwrite,
+    getCurrentHookNode,
+} from "./vdom.hooks.js";
+import { memorize, recall, remembered } from "./memory.js";
 
 let jobs = [];
 const memoryPrefix = "ComponentState_";
@@ -11,29 +16,33 @@ const hasKey = (vnode) => vnode && typeof vnode.props?.key !== "undefined";
 const setKey = (key, vnode) => (_keys[key] = vnode.el);
 
 /**
- * @param {any} v 
+ * @param {any} v
  * @returns {v is VNode}
  */
 function isVNode(v) {
-    return typeof v == 'object' &&
+    return (
+        typeof v == "object" &&
         v?.isComp === false &&
-        typeof v?.props == 'object' &&
-        typeof v?.tag == 'string'
+        typeof v?.props == "object" &&
+        typeof v?.tag == "string"
+    );
 }
 
 /**
- * @param {any} v 
+ * @param {any} v
  * @returns {v is VNodeComponent}
  */
 function isVNodeComponent(v) {
-    return typeof v == 'object' &&
+    return (
+        typeof v == "object" &&
         v?.isComp === true &&
-        typeof v?.compHooks == 'number' &&
-        typeof v?.stringified == 'string' &&
-        typeof v?.remember == 'boolean' &&
-        typeof v?.recompute == 'boolean' &&
-        typeof v?.invalidAfter == 'number' &&
-        typeof v?.render == 'function'
+        typeof v?.compHooks == "number" &&
+        typeof v?.stringified == "string" &&
+        typeof v?.remember == "boolean" &&
+        typeof v?.recompute == "boolean" &&
+        typeof v?.invalidAfter == "number" &&
+        typeof v?.render == "function"
+    );
 }
 
 /**
@@ -42,31 +51,28 @@ function isVNodeComponent(v) {
  */
 function pushJob(fn) {
     jobs.push(fn);
-};
+}
 
 function executeJobs() {
     for (const job of jobs) job();
     jobs.length = 0;
-};
+}
 
 function filterFalsy(c) {
-    return c !== false && c !== null && c !== undefined
+    return c !== false && c !== null && c !== undefined;
 }
 
 /**
- * 
- * @param {Array} children 
- * @returns 
+ *
+ * @param {Array} children
+ * @returns
  */
-const flattenChildren = (children) =>
-    children
-        .flat(10)
-        .filter(filterFalsy);
+const flattenChildren = (children) => children.flat(10).filter(filterFalsy);
 
 /**
- * @param {string} tag 
- * @param {object} props 
- * @param  {VNodeChild[] | VNodeChild[][]} children 
+ * @param {string} tag
+ * @param {object} props
+ * @param  {VNodeChild[] | VNodeChild[][]} children
  * @returns {VNode}
  */
 const createVNode = (tag, props = {}, ...children) => {
@@ -94,7 +100,7 @@ const createVNode = (tag, props = {}, ...children) => {
 };
 
 function wrapPrimitive(node) {
-    if (typeof node == 'function') {
+    if (typeof node == "function") {
         node = node();
     }
     if (["string", "number"].includes(typeof node)) {
@@ -105,7 +111,7 @@ function wrapPrimitive(node) {
             children: [text],
             props: {},
             el: document.createTextNode(text),
-            isComp: false
+            isComp: false,
         };
     }
     return node;
@@ -116,13 +122,13 @@ const updateRef = (ref, value) => {
     if (!ref) return;
 
     try {
-        if (typeof ref === 'function') {
+        if (typeof ref === "function") {
             ref(value);
-        } else if (ref && typeof ref === 'object' && 'current' in ref) {
+        } else if (ref && typeof ref === "object" && "current" in ref) {
             ref.current = value;
         }
     } catch (e) {
-        console.error('Error updating ref:', e);
+        console.error("Error updating ref:", e);
     }
 };
 
@@ -178,7 +184,7 @@ const updateProps = (el, oldProps, newProps) => {
             continue;
         }
 
-        if (key === 'ref') {
+        if (key === "ref") {
             // Only update ref if it actually changed
             if (oldValue !== newValue) {
                 // Remove old ref
@@ -209,7 +215,7 @@ const updateProps = (el, oldProps, newProps) => {
                     "class",
                     Array.isArray(newValue)
                         ? newValue.filter(Boolean).join(" ")
-                        : newValue
+                        : newValue,
                 );
             } else if (key === "style") {
                 if (typeof newValue === "string") {
@@ -280,7 +286,7 @@ const renderVNode = (vnode, parentIsSvg = false) => {
             if (isSvg) {
                 el.setAttribute(
                     "class",
-                    Array.isArray(value) ? value.filter(Boolean).join(" ") : value
+                    Array.isArray(value) ? value.filter(Boolean).join(" ") : value,
                 );
             } else {
                 el.className = Array.isArray(value)
@@ -312,8 +318,7 @@ const renderVNode = (vnode, parentIsSvg = false) => {
         : [work.children];
 
     for (let child of children) {
-        if (child === null || child === undefined)
-            continue;
+        if (child === null || child === undefined) continue;
         el.appendChild(renderVNode(child, isSvg));
     }
 
@@ -337,7 +342,7 @@ const patchChildrenWithKeys = (parent, oldChildren, newChildren) => {
             if (oldVNode.stringifiedProps != newVNode.stringifiedProps) {
                 requestAnimationFrame(() => {
                     updateProps(oldVNode.el, oldVNode.props, newVNode.props);
-                })
+                });
             }
 
             const oldChildren = oldVNode.children || [];
@@ -345,7 +350,7 @@ const patchChildrenWithKeys = (parent, oldChildren, newChildren) => {
             const max = Math.max(oldChildren.length, newChildren.length);
 
             for (let i = 0; i < max; i++) {
-                patch(oldVNode.el, oldChildren[i], newChildren[i], i, oldVNode);
+                patch(oldVNode.el, oldChildren[i], newChildren[i]);
             }
 
             newVNode.el = oldVNode.el;
@@ -378,9 +383,9 @@ const patchChildrenWithKeys = (parent, oldChildren, newChildren) => {
 
 /**
  * Handle component's state management
- * 
- * @param {VNodeComponent} old 
- * @param {VNodeComponent} replacement 
+ *
+ * @param {VNodeComponent} old
+ * @param {VNodeComponent} replacement
  */
 const handleComponentState = (old, replacement) => {
     let oldHookCount = old.compHooks,
@@ -389,51 +394,56 @@ const handleComponentState = (old, replacement) => {
     let current = getCurrentHookNode();
     let store = new Array(oldHookCount);
     let storedMemory = [];
-    if (replacement.remember && remembered(memoryPrefix + replacement.stringified)) {
+    if (
+        replacement.remember &&
+        remembered(memoryPrefix + replacement.stringified)
+    ) {
         storedMemory = recall(memoryPrefix + replacement.stringified);
     }
 
     for (let i = 0; i < Math.max(oldHookCount, replacementHookCount); i++) {
         if (i > oldHookCount) {
-            current = { next: current.next }
+            current = { next: current.next };
         } else {
             if (old.remember) {
-                store[i] = current.value
+                store[i] = current.value;
             }
         }
 
-        // if (current.value?.cleanup) {
-        //     try {
-        //         current.value.cleanup()
-        //     } catch (error) {
+        if (current.value?.cleanup) {
+            try {
+                current.value.cleanup()
+            } catch (error) {
 
-        //     }
-        // }
+            }
+        }
 
-        current.value = undefined
+        current.value = undefined;
 
         if (replacement.remember) {
-            current.value = storedMemory[i]
-            if (replacement.recompute && typeof current.value?.recompute !== 'undefined') {
+            current.value = storedMemory[i];
+            if (
+                replacement.recompute &&
+                typeof current.value?.recompute !== "undefined"
+            ) {
                 current.value.recompute = true;
             }
         }
 
-
-        current = current.next
+        current = current.next;
     }
 
     if (oldHookCount > replacementHookCount) {
-        orphan(old.compHooks - replacement.compHooks)
+        orphan(old.compHooks - replacement.compHooks);
     }
 
-    memorize(memoryPrefix + old.stringified, store, old.invalidAfter)
-}
+    memorize(memoryPrefix + old.stringified, store, old.invalidAfter);
+};
 
 /**
  * Handle component's state retrieval
- * 
- * @param {VNodeComponent} component 
+ *
+ * @param {VNodeComponent} component
  */
 const handleComponentRetrieval = (component) => {
     let data = new Array(component.compHooks);
@@ -441,81 +451,93 @@ const handleComponentRetrieval = (component) => {
 
     for (let i = 0; i < component.compHooks; i++) {
         if (component.remember) {
-            data[i] = current.value
+            data[i] = current.value;
         }
-        current.value = undefined
-        current = current.next
+        if (current.value?.cleanup) {
+            try {
+                current.value.cleanup()
+            } catch (error) {
+
+            }
+        }
+        current.value = undefined;
+        current = current.next;
     }
 
-    orphan(component.compHooks - 1)
+    orphan(component.compHooks - 1);
 
     if (component.remember) {
-        memorize(memoryPrefix + component.stringified, data, component.invalidAfter)
+        memorize(
+            memoryPrefix + component.stringified,
+            data,
+            component.invalidAfter,
+        );
     }
-}
+};
 
 /**
  * Handle component's state application
- * 
- * @param {VNodeComponent} component 
+ *
+ * @param {VNodeComponent} component
  */
 const handleComponentApplyState = (component) => {
     allocate(component.compHooks - 1);
     if (component.remember && remembered(memoryPrefix + component.stringified)) {
-        overwrite(recall(memoryPrefix + component.stringified), component.recompute)
+        overwrite(
+            recall(memoryPrefix + component.stringified),
+            component.recompute,
+        );
     }
-}
+};
 
 /**
- * 
- * @param {Element} parent 
- * @param {VNode | VNodeComponent | undefined } old 
- * @param {VNode | VNodeComponent | undefined } newOne 
+ *
+ * @param {Element} parent
+ * @param {VNode | VNodeComponent | undefined } old
+ * @param {VNode | VNodeComponent | undefined } newOne
  * @returns {VNode | VNodeComponent | null}
  */
 const handleComponent = (parent, old, newOne) => {
     if (isVNodeComponent(old) && isVNodeComponent(newOne)) {
         // console.log(old, newOne)
         if (old.stringified !== newOne.stringified) {
-            handleComponentState(old, newOne)
+            handleComponentState(old, newOne);
         }
 
         newOne.vdom = patch(parent, old.vdom, newOne.render(), true);
         return newOne;
     } else if (isVNodeComponent(old) && !isVNodeComponent(newOne)) {
-        handleComponentRetrieval(old)
+        handleComponentRetrieval(old);
 
         return patch(parent, old.vdom, newOne, true);
     } else if (!isVNodeComponent(old) && isVNodeComponent(newOne)) {
-        handleComponentApplyState(newOne)
+        handleComponentApplyState(newOne);
 
         newOne.vdom = patch(parent, old, newOne.render(), true);
         return newOne;
-    } else { 
-        console.error('Impossible', old, newOne);
+    } else {
+        console.error("Impossible", old, newOne);
+        return null;
     }
 };
 
 /**
- * 
- * @param {Element} parent 
- * @param {VNode | VNodeComponent | null} oldNode 
- * @param {VNode | VNodeComponent | null} newNode 
- * @param {boolean} skip 
+ *
+ * @param {Element} parent
+ * @param {VNode | VNodeComponent | null | undefined} oldNode
+ * @param {VNode | VNodeComponent | null | undefined} newNode
+ * @param {boolean} skip
  * @returns {VNode | null}
  */
 const patch = (parent, oldNode, newNode, skip = false) => {
     if (oldNode == null && newNode == null) return null;
 
-    if (isVNodeComponent(oldNode) || isVNodeComponent(newNode)) console.log(oldNode, newNode);
-    
     if (!skip && (isVNodeComponent(oldNode) || isVNodeComponent(newNode))) {
         return handleComponent(parent, oldNode, newNode);
     }
 
     if (newNode == null || newNode == undefined) {
-        console.log("Enter 1");
-        if (oldNode?.tag == '#fragment') {
+        if (oldNode?.tag == "#fragment") {
             let node = oldNode.el;
             const end = oldNode._end;
 
@@ -524,25 +546,19 @@ const patch = (parent, oldNode, newNode, skip = false) => {
             }
             while (node && node !== end) {
                 const next = node.nextSibling;
-                parent.removeChild(node)
+                parent.removeChild(node);
                 // console.log(node);
                 node = next;
             }
 
             return null;
-
         }
-        // if (oldNode?.el) {
-        console.log(oldNode)
         cleanupVNode(oldNode);
         parent.removeChild(oldNode.el);
-        // }
         return null;
     }
 
     if (newNode.tag === "#text") {
-        console.log("Enter 2", oldNode, newNode);
-        // console.log(oldNode,newNode)
         if (oldNode?.tag === "#text") {
             const oldText = oldNode.children?.[0];
             const newText = newNode.children?.[0];
@@ -554,7 +570,7 @@ const patch = (parent, oldNode, newNode, skip = false) => {
             return newNode;
         }
 
-        if (oldNode?.tag == '#fragment') {
+        if (oldNode?.tag == "#fragment") {
             let node = oldNode.el;
             const end = oldNode._end;
 
@@ -564,7 +580,7 @@ const patch = (parent, oldNode, newNode, skip = false) => {
 
             while (node && node !== end) {
                 const next = node.nextSibling;
-                parent.removeChild(node)
+                parent.removeChild(node);
                 node = next;
             }
 
@@ -587,8 +603,6 @@ const patch = (parent, oldNode, newNode, skip = false) => {
     }
 
     if (oldNode == null) {
-        console.log("Enter 3");
-        // console.log(3, oldNode, newNode)
         if (newNode.tag === "#fragment") {
             const frag = renderVNode(newNode);
             parent.appendChild(frag);
@@ -601,9 +615,7 @@ const patch = (parent, oldNode, newNode, skip = false) => {
         return newNode;
     }
 
-    // console.log("got here", oldNode, newNode);
     if (oldNode.tag === "#fragment" && newNode.tag !== "#fragment") {
-        console.log("Enter 5");
         let node = oldNode.el;
         const end = oldNode._end;
 
@@ -623,16 +635,11 @@ const patch = (parent, oldNode, newNode, skip = false) => {
         return newNode;
     }
 
-
     if (oldNode.tag !== newNode.tag) {
-        console.log("Enter 6");
-
         cleanupVNode(oldNode);
 
-        
         if (newNode.tag === "#fragment") {
             const frag = renderVNode(newNode);
-            console.log(oldNode,newNode, 'chang tag');
             parent.replaceChild(frag, oldNode.el);
             return newNode;
         }
@@ -644,8 +651,6 @@ const patch = (parent, oldNode, newNode, skip = false) => {
     }
 
     if (newNode.tag === "svg") {
-        console.log("Enter 7");
-
         cleanupVNode(oldNode);
 
         const el = renderVNode(newNode, true);
@@ -660,19 +665,13 @@ const patch = (parent, oldNode, newNode, skip = false) => {
         });
     }
 
-    if (
-        newNode.tag === "input" &&
-        oldNode.el?.value !== newNode.props?.value
-    ) {
+    if (newNode.tag === "input" && oldNode.el?.value !== newNode.props?.value) {
         oldNode.el.value = newNode.props.value;
     }
 
     const oldChildren = oldNode.children || [];
     const newChildren = newNode.children || [];
-    if (
-        oldNode.props?.keyed &&
-        newNode.props?.keyed
-    ) {
+    if (oldNode.props?.keyed && newNode.props?.keyed) {
         patchChildrenWithKeys(oldNode.el, oldChildren, newChildren);
     } else {
         const max = Math.max(oldChildren.length, newChildren.length);
@@ -681,9 +680,9 @@ const patch = (parent, oldNode, newNode, skip = false) => {
                 patch(
                     oldNode?.tag === "#fragment" ? parent : oldNode.el,
                     oldChildren[i],
-                    newChildren[i]
+                    newChildren[i],
                 );
-            })
+            });
         }
     }
 
@@ -695,14 +694,14 @@ const patch = (parent, oldNode, newNode, skip = false) => {
 };
 
 /**
- * 
+ *
  */
 const RenderVDOM = {
     createVNode,
     /**
-     * 
-     * @param {VNode} vnode 
-     * @param {Element|string} container 
+     *
+     * @param {VNode} vnode
+     * @param {Element|string} container
      * @returns {VNode | null}
      */
     render(vnode, container) {
@@ -716,10 +715,10 @@ const RenderVDOM = {
         return patch(container, null, node);
     },
     /**
-     * 
-     * @param {Element} container 
-     * @param {VNode|null} oldNode 
-     * @param {VNode|null} newNode 
+     *
+     * @param {Element} container
+     * @param {VNode|null} oldNode
+     * @param {VNode|null} newNode
      * @returns {VNode|null}
      */
     update(container, oldNode, newNode) {
@@ -731,10 +730,10 @@ const __ = (tag, props = {}, ...children) => {
     return renderVNode(createVNode(tag, props, children));
 };
 /**
- * 
+ *
  * @param {String|Document|Node} selector
- * @param {Document} scope 
- * @returns 
+ * @param {Document} scope
+ * @returns
  */
 const getTarget = (selector, scope = document) => {
     if (selector instanceof Node || selector instanceof Document) {
@@ -871,9 +870,8 @@ const html = new Proxy(
                 ((props = {}, ...children) => vnode(tag, props, ...children))
             );
         },
-    }
+    },
 );
-
 
 export {
     html,

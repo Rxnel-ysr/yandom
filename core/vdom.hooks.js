@@ -1,23 +1,21 @@
 "use strict";
 import { value } from "../helper/helper.js";
-import { memorize, recall, remembered } from "./memory.js";
 import { RenderVDOM, executeJobs, getTarget } from "./vdom.js";
 
 let currentComponent = null,
-    previewNode = { next: null },
     regression = false,
     handler = null,
     disableRerender = false,
     renderDebounce = null;
 
 /**
- * 
- * @param {Object} hookNode 
+ *
+ * @param {Object} hookNode
  * @returns {Object}
  */
 const nextNode = (hookNode) => {
-    return hookNode.next = hookNode.next || { next: null }
-}
+    return (hookNode.next = hookNode.next || { next: null });
+};
 
 const resetContext = () => {
     currentComponent.hookNode = currentComponent.hooks;
@@ -28,10 +26,6 @@ const triggerRerender = () => {
 };
 
 const setRegression = (bool) => (regression = bool);
-
-const resetPreview = () => {
-    previewNode = { next: null };
-};
 
 const trailMaker = (n = 1) => {
     let head = { next: null };
@@ -80,7 +74,7 @@ const allocate = (n) => {
 const overwrite = (array, recompute = false) => {
     let start = currentComponent.hookNode;
     array.map((e) => {
-        if (recompute && typeof e?.recompute !== 'undefined') {
+        if (recompute && typeof e?.recompute !== "undefined") {
             e.recompute = true;
         }
         start.value = e;
@@ -121,6 +115,15 @@ const getData = (until) => {
 const getCurrentHookNode = () => {
     if (!currentComponent) return;
     return currentComponent.hookNode;
+};
+
+/**
+ * 
+ * @param {string|VNodeFunction} stringFn 
+ * @returns {number}
+ */
+function countHooks(stringFn) {
+    return (stringFn.match(/(?<!\/\/[^\n]*)(useEffect\(|useState\(|useRef\(|useMemo\()/gm) || []).length;
 }
 
 /**
@@ -128,7 +131,7 @@ const getCurrentHookNode = () => {
  *
  * @param {VNodeFunction} compFn
  * Component render function. Must be pure. Receives `args`.
- * 
+ *
  * @param {object} args
  * Args that will be passed on th `compFn`
  *
@@ -151,73 +154,24 @@ const comp = (
         hook: null,
         remember: false,
         recompute: false,
-        invalidAfter: 500
+        invalidAfter: undefined,
     },
 ) => {
-    let name;
-    let counter = 0;
-    let result = {
-        render: () => compFn(args),
-        isComp: true,
-        remember: value(options?.remember, false),
-        recompute: value(options?.recompute, false),
-        invalidAfter: value(options?.invalidAfter, 500),
-        stringified: null,
-        compHooks: null
-    };
+    let name,
+        counter = 0,
+        result = {
+            render: () => compFn(args),
+            isComp: true,
+            remember: value(options?.remember, false),
+            recompute: value(options?.recompute, false),
+            invalidAfter: value(options?.invalidAfter, 0),
+            stringified: null,
+            compHooks: null,
+        };
 
-    if (!options.hook && !options.name) {
-        const previewHook = previewNode;
+    counter = value(options?.hook, countHooks(compFn.toString()))
+    name = value(options?.name, comp.toString() + JSON.stringify(options))
 
-        regression = true;
-
-        const vdom = compFn(args);
-
-        // result.vnode = vdom;
-
-        regression = false;
-
-        const nextExpectedNode = previewNode;
-        let current = previewHook;
-
-        while (current && current !== nextExpectedNode) {
-            current = current.next;
-            counter++;
-        }
-        name = JSON.stringify(vdom);
-    } else if (options.name) {
-        const stringifiedOption = JSON.stringify(options);
-
-        if (!remembered('compHookCount_' + stringifiedOption)) {
-
-            const previewHook = previewNode;
-
-            regression = true;
-
-            const vdom = compFn(args);
-
-            // result.vnode = vdom;
-
-            regression = false;
-
-            const nextExpectedNode = previewNode;
-            let current = previewHook;
-
-            while (current && current !== nextExpectedNode) {
-                current = current.next;
-                counter++;
-            }
-            memorize('compHookCount_' + stringifiedOption, counter, 0)
-
-            name = options.name
-        } else {
-            name = options.name
-            counter = recall('compHookCount_' + stringifiedOption)
-        }
-    } else {
-        counter = options.hook;
-        name = options.name;
-    }
     result.stringified = name;
     result.compHooks = counter;
 
@@ -250,12 +204,7 @@ const destroy = () => {
  * @returns {[T, (val: T | ((prev: T) => T)) => void]} A tuple: current state and a setter function.
  */
 const useState = (initial, handleInputEvent = false) => {
-    let hookNode = regression ? previewNode : currentComponent?.hookNode;
-
-    if (regression) {
-        previewNode = nextNode(hookNode);
-        return [initial, () => { }];
-    }
+    let hookNode = currentComponent?.hookNode;
 
     if (typeof hookNode?.value === "undefined") {
         hookNode.value = initial;
@@ -263,7 +212,7 @@ const useState = (initial, handleInputEvent = false) => {
 
     const set = (val) => {
         if (handleInputEvent && val instanceof InputEvent) {
-            val = val.target.value
+            val = val.target.value;
         }
         hookNode.value = typeof val == "function" ? val(hookNode?.value) : val;
 
@@ -290,12 +239,7 @@ const bulkSetState = (callback) => {
 };
 
 const useRef = (initial) => {
-    let hookNode = regression ? previewNode : currentComponent.hookNode;
-
-    if (regression) {
-        previewNode = nextNode(hookNode);
-        return { current: undefined };
-    }
+    let hookNode = currentComponent.hookNode;
 
     if (typeof hookNode?.value === "undefined") {
         hookNode.value = { current: initial };
@@ -305,29 +249,26 @@ const useRef = (initial) => {
     return hookNode?.value;
 };
 /**
- * 
- * @param {Function} effect 
- * @param {String[]} deps 
- * @returns 
+ *
+ * @param {Function} effect
+ * @param {String[]} deps
+ * @returns
  */
 const useEffect = (effect, deps = null) => {
-    let hookNode = regression ? previewNode : currentComponent.hookNode;
-
-    if (regression) {
-        previewNode = nextNode(hookNode);
-        return;
-    }
+    let hookNode = currentComponent.hookNode;
 
     const hasNoDeps = !deps;
 
     const oldHook = hookNode?.value;
     const hasChangedDeps =
         typeof oldHook !== "undefined"
-            ? (oldHook?.recompute || !deps.every((dep, j) => Object.is(dep, oldHook.deps[j])))
+            ? oldHook?.recompute ||
+            !deps.every((dep, j) => Object.is(dep, oldHook.deps[j]))
             : true;
 
     if (hasNoDeps || hasChangedDeps) {
-        if (oldHook?.cleanup) { //&& !oldHook?.recompute) {
+        if (oldHook?.cleanup) {
+            //&& !oldHook?.recompute) {
             queueMicrotask(() => {
                 oldHook.cleanup?.();
             });
@@ -353,12 +294,7 @@ const useEffect = (effect, deps = null) => {
  * @returns {T} Memoized value.
  */
 const useMemo = (compute, deps) => {
-    let hookNode = regression ? previewNode : currentComponent.hookNode;
-
-    if (regression) {
-        previewNode = nextNode(hookNode);
-        return undefined;
-    }
+    let hookNode = currentComponent.hookNode;
 
     const prev = hookNode?.value;
 
@@ -381,8 +317,8 @@ const useMemo = (compute, deps) => {
 };
 
 function onReady(cb, delay = 1000) {
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", () => {
             setTimeout(cb, delay);
         });
     } else {
@@ -391,24 +327,24 @@ function onReady(cb, delay = 1000) {
 }
 /**
  * Just wrapper for establishing connection to the ws server
- * @param {Object} config 
- * @param {Object} app 
+ * @param {Object} config
+ * @param {Object} app
  */
 function hmr(config, app) {
     const wsPort = config?.ws?.port || 4040,
         wsHost = config?.ws?.host || location.hostname,
-        main = config?.main || './src/app.js'
+        main = config?.main || "./src/app.js";
 
     const socket = new WebSocket(`ws://${wsHost}:${wsPort}`);
-    socket.addEventListener('message', async ({ data }) => {
+    socket.addEventListener("message", async ({ data }) => {
         const msg = JSON.parse(data);
-        if (msg.type === 'reload') {
+        if (msg.type === "reload") {
             try {
                 console.log(`[HMR]: ${msg.path}`);
                 // window.setLoad(msg.path);
                 const mod = await import(`${main}?t=` + msg.timestamp);
                 if (mod.default) {
-                    app.setRenderFn(mod.default)
+                    app.setRenderFn(mod.default);
                     app.rerender();
                 }
             } catch (error) {
@@ -426,26 +362,26 @@ function hmr(config, app) {
 function createRoot(root) {
     const comp = {
         /**
-         * @param {Function} app 
+         * @param {Function} app
          * @returns Object
          */
         render(app) {
-            comp.renderFn = app
+            comp.renderFn = app;
             currentComponent = comp;
             handler = comp.rerender;
             comp.rerender();
             return comp;
         },
         /**
-         * 
-         * @param {Object} any 
+         *
+         * @param {Object} any
          * @returns Object
          */
         use(any) {
-            if ('prepare' in any) {
-                any.prepare(this)
+            if ("prepare" in any) {
+                any.prepare(this);
             } else {
-                throw Error("Incompatible mod type.")
+                throw Error("Incompatible mod type.");
             }
             return comp;
         },
@@ -462,30 +398,27 @@ function createRoot(root) {
         },
         rerender() {
             requestAnimationFrame(() => {
-                if (typeof renderDebounce == 'number') {
-                    clearTimeout(renderDebounce)
-                    renderDebounce = null
+                if (typeof renderDebounce == "number") {
+                    clearTimeout(renderDebounce);
+                    renderDebounce = null;
                 }
                 renderDebounce = setTimeout(() => {
                     try {
                         resetContext();
-                        resetPreview();
                         const newVNode = comp.renderFn();
                         if (!comp.vdom) {
                             comp.vdom = RenderVDOM.render(newVNode, comp.target);
                         } else {
                             comp.vdom = RenderVDOM.update(comp.target, comp.vdom, newVNode);
                         }
-
                     } catch (error) {
                         comp.target.innerHTML = `<pre>${error.stack}</pre>`;
                         console.error(error);
                     }
-
-                }, 5);
+                }, 33);
 
                 onReady(executeJobs, 300);
-            })
+            });
         },
     };
     return comp;
@@ -509,5 +442,5 @@ export {
     triggerRerender,
     getData,
     bulkSetState,
-    hmr
+    hmr,
 };
