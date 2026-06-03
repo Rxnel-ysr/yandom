@@ -532,6 +532,7 @@ class Router {
             console.log("Cache hit", path);
             result = this.cache.recall(path);
             this.params = result.params;
+            this.option.titleEl.innerText = result.route.title;
             return result.rendered;
         }
 
@@ -547,7 +548,7 @@ class Router {
             });
             this.cache.memorize(
                 path,
-                { rendered: result, params },
+                { rendered: result, params,  route: matchedRoute},
                 matchedRoute.cacheExp,
             );
             return result;
@@ -616,7 +617,7 @@ class Router {
 
                 lazyComponent.importedFn = realComponent.default;
                 this.cache.forget(path);
-                this.cache.memorize(path, { rendered, params: args }, route.cacheExp);
+                this.cache.memorize(path, { rendered, params: args, route }, route.cacheExp);
 
                 if (location.pathname === path) {
                     // @ts-ignore
