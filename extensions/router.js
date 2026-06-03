@@ -8,7 +8,7 @@ import { createVNode, html, pushJob, registerVdom } from "../core/vdom.js";
 import Memory from "../core/memory-class.js";
 
 /**
- * @param {any} v 
+ * @param {any} v
  * @returns {v is RadixNode}
  */
 function isRadixNode(v) {
@@ -20,19 +20,19 @@ function isRadixNode(v) {
  * @returns {v is LazyComponent}
  */
 function isLazyComponent(v) {
-    return v !== null && typeof v === 'object' && v.lazy === true;
+    return v !== null && typeof v === "object" && v.lazy === true;
 }
 
 /**
- * @param {() => Promise<{ default: VNodeFunction }>} importFn 
+ * @param {() => Promise<{ default: VNodeFunction }>} importFn
  * @returns {LazyComponent}
  */
 function lazyLoad(importFn) {
     return {
         lazy: true,
         importFn,
-        importedFn: undefined
-    }
+        importedFn: undefined,
+    };
 }
 
 class RadixNode {
@@ -41,7 +41,7 @@ class RadixNode {
     /** @type {RouteComponent | null} */
     route = null;
     /** @type {string} */
-    path = '';
+    path = "";
     /** @type {string[]} */
     paramKeys = [];
     /** @type {boolean} */
@@ -54,7 +54,7 @@ class RadixNode {
     /**
      * @param {string} [path]
      */
-    constructor(path = '') {
+    constructor(path = "") {
         this.path = path;
     }
 }
@@ -67,13 +67,13 @@ class Router {
     /** @type {Record<string, any>} */
     errors = {};
     /** @type {string} */
-    element = 'a';
+    element = "a";
     /** @type {Memory} */
     cache;
     /** @type {Record<string, any>} */
     elementProps = {};
     /** @type {string} */
-    cachePath = '';
+    cachePath = "";
     /** @type {RouteComponent[]} */
     routes = [];
     /**
@@ -90,66 +90,69 @@ class Router {
     /** @type {Record<string, string | undefined>|undefined} */
     proxy;
 
+    /** @type {VNodeFunction|null} */
+    placeholder = null;
+
     /**
      * @returns {void}
      */
     prepare() {
-        this.use(triggerRerender)
+        this.use(triggerRerender);
     }
 
     /**
-     * 
-     * @param {Route|Route[]} route 
+     *
+     * @param {Route|Route[]} route
      * @private
      */
     _registerRoute(route) {
         route = Array.isArray(route) ? route : [route];
 
         route.forEach((route) => {
-            this.register(`/${trim(route.uri, '/')}`, {
+            this.register(`/${trim(route.uri, "/")}`, {
                 component: route.component,
                 title: route?.title,
                 setting: route?.cache,
                 static: route?.static,
-                cacheExp: route?.cacheExp || this.option.cacheExp || 0
+                cacheExp: route?.cacheExp || this.option.cacheExp || 0,
             });
 
             if (route.children) {
-                route.children.forEach(subroute => {
-                    this.register(`/${trim(route.uri, '/')}/${trim(subroute.uri, '/')}`, {
+                route.children.forEach((subroute) => {
+                    this.register(`/${trim(route.uri, "/")}/${trim(subroute.uri, "/")}`, {
                         component: subroute.component,
                         title: subroute?.title,
                         setting: subroute?.cache,
                         static: subroute?.static,
-                        cacheExp: subroute?.cacheExp || this.option.cacheExp || 0
-                    })
-                })
+                        cacheExp: subroute?.cacheExp || this.option.cacheExp || 0,
+                    });
+                });
             }
-            this.routes.push(route)
+            this.routes.push(route);
         });
     }
 
     /**
      *  Register routes
-     * @param {Route[]} routes 
+     * @param {Route[]} routes
      */
     useRoutes(routes) {
-        this._registerRoute(routes)
+        this._registerRoute(routes);
     }
 
     /**
      * Register a route
-     * @param {Route} route 
+     * @param {Route} route
      */
     route(route) {
-        this._registerRoute(route)
+        this._registerRoute(route);
     }
 
     /**
      * @param {(to: string, from: string, next: Function) => void} callback
      */
     beforeEach(callback) {
-        this.middleware = callback
+        this.middleware = callback;
         return this;
     }
 
@@ -161,15 +164,15 @@ class Router {
             return this.proxy;
         }
 
-        return this.proxy = new Proxy(this.params, {
+        return (this.proxy = new Proxy(this.params, {
             get(target, prop, receiver) {
                 if (!(prop in target)) {
                     return undefined;
                 }
 
                 return Reflect.get(target, prop, receiver);
-            }
-        });
+            },
+        }));
     }
 
     /**
@@ -178,19 +181,19 @@ class Router {
      */
     static make(option) {
         return new Router(option);
-    };
+    }
 
     /**
      * @param {string} hash
      * @param {string} block
      * @returns {void}
      */
-    scrollToHash(hash, block = 'start') {
+    scrollToHash(hash, block = "start") {
         const el = document.querySelector(hash);
         if (!el) return;
         el.scrollIntoView({ behavior: "smooth", block: block });
         history.replaceState(null, "", hash);
-    };
+    }
 
     /**
      * @param {RouterOptions} option
@@ -201,54 +204,64 @@ class Router {
         this.option = option;
 
         if (Array.isArray(option?.routes)) {
-            this._registerRoute(option.routes)
+            this._registerRoute(option.routes);
         }
 
         if (option?.element) {
-            this.element = option.element
+            this.element = option.element;
         }
 
-        registerVdom('routerLink', (props = {}, ...children) => {
-            let destination = props?.to || ''
-            let scroll = props?.scrollTo || ''
-            let block = props?.block || 'start'
-            let finalDestination = props.href = `${destination}${scroll}`
+        if (option?.placeholder) {
+            this.placeholder = option.placeholder;
+        }
 
-            delete props.to
-            delete props.scrollTo
+        registerVdom("routerLink", (props = {}, ...children) => {
+            let destination = props?.to || "";
+            let scroll = props?.scrollTo || "";
+            let block = props?.block || "start";
+            let finalDestination = (props.href = `${destination}${scroll}`);
 
-            return createVNode(this.element, {
-                ...this.elementProps, ...props, onclick: (e) => {
-                    e.preventDefault()
-                    let different = currentUri() !== destination;
+            delete props.to;
+            delete props.scrollTo;
 
-                    if (different) {
-                        this.go(finalDestination);
-                    }
-                    if (scroll) {
+            return createVNode(
+                this.element,
+                {
+                    ...this.elementProps,
+                    ...props,
+                    onclick: (e) => {
+                        e.preventDefault();
+                        let different = currentUri() !== destination;
+
                         if (different) {
-                            pushJob(() => {
-                                this.scrollToHash(scroll, block);
-                            })
-                        } else {
-                            this.scrollToHash(scroll, block);
+                            this.go(finalDestination);
                         }
-                    }
-                }
-            }, children)
-        })
+                        if (scroll) {
+                            if (different) {
+                                pushJob(() => {
+                                    this.scrollToHash(scroll, block);
+                                });
+                            } else {
+                                this.scrollToHash(scroll, block);
+                            }
+                        }
+                    },
+                },
+                children,
+            );
+        });
     }
 
     /**
      * Insert a route into the radix tree
-     * @param {string} path 
-     * @param {RadixNode} node 
-     * @param {string[]} paramKeys 
+     * @param {string} path
+     * @param {RadixNode} node
+     * @param {string[]} paramKeys
      * @returns {void}
      * @private
      */
     _insertPath(path, node, paramKeys = []) {
-        if (path === '') {
+        if (path === "") {
             node.route = this.routes[path];
             node.paramKeys = paramKeys;
             return;
@@ -262,7 +275,11 @@ class Router {
             if (commonPrefix) {
                 if (commonPrefix === childPath) {
                     // Child is fully matched, continue down
-                    this._insertPath(path.slice(commonPrefix.length), childNode, paramKeys);
+                    this._insertPath(
+                        path.slice(commonPrefix.length),
+                        childNode,
+                        paramKeys,
+                    );
                 } else if (commonPrefix === path) {
                     // New path is shorter, need to split child
                     const remainingChildPath = childPath.slice(commonPrefix.length);
@@ -278,7 +295,7 @@ class Router {
                     childNode.route = null;
                     childNode.paramKeys = [];
 
-                    this._insertPath('', childNode, paramKeys);
+                    this._insertPath("", childNode, paramKeys);
                 } else {
                     // Split both paths
                     const remainingNewPath = path.slice(commonPrefix.length);
@@ -317,8 +334,8 @@ class Router {
 
     /**
      * Get common prefix between two strings
-     * @param {string} a 
-     * @param {string} b 
+     * @param {string} a
+     * @param {string} b
      * @returns {string}
      * @private
      */
@@ -332,23 +349,24 @@ class Router {
 
     /**
      * Search for a route in the radix tree
-     * @param {string} path 
-     * @param {RadixNode} node 
-     * @param {Object} params 
+     * @param {string} path
+     * @param {RadixNode} node
+     * @param {Object} params
      * @returns {RouteComponent | null}
      * @private
      */
     _searchPath(path, node, params = {}) {
-        if (path === '') {
+        if (path === "") {
             return node.route;
         }
 
         for (let [childPath, childNode] of node.children) {
             if (childNode.isParam) {
                 // Handle parameter nodes
-                const slashIndex = path.indexOf('/');
+                const slashIndex = path.indexOf("/");
                 const paramValue = slashIndex === -1 ? path : path.slice(0, slashIndex);
-                const remainingPath = slashIndex === -1 ? '' : path.slice(slashIndex + 1);
+                const remainingPath =
+                    slashIndex === -1 ? "" : path.slice(slashIndex + 1);
 
                 params[childNode.paramKeys[0]] = decodeURIComponent(paramValue);
                 const result = this._searchPath(remainingPath, childNode, params);
@@ -365,15 +383,15 @@ class Router {
 
     /**
      * Parse path and extract parameter names
-     * @param {string} path 
+     * @param {string} path
      * @returns {{segments: string[], paramKeys: string[]}}
      */
     _parsePath(path) {
-        const segments = path.split('/').filter(Boolean);
+        const segments = path.split("/").filter(Boolean);
         const paramKeys = [];
 
         for (const segment of segments) {
-            if (segment.startsWith(':')) {
+            if (segment.startsWith(":")) {
                 paramKeys.push(segment.slice(1));
             }
         }
@@ -383,8 +401,8 @@ class Router {
 
     /**
      * Insert route into radix tree
-     * @param {string} uri 
-     * @param {RouteComponent} comp 
+     * @param {string} uri
+     * @param {RouteComponent} comp
      * @returns {void}
      */
     _insertRoute(uri, comp) {
@@ -400,8 +418,8 @@ class Router {
 
         for (let i = 0; i < segments.length; i++) {
             const segment = segments[i];
-            const isParam = segment.startsWith(':');
-            const key = isParam ? ':param' : segment;
+            const isParam = segment.startsWith(":");
+            const key = isParam ? ":param" : segment;
 
             let node = currentNode.children.get(key);
 
@@ -414,7 +432,7 @@ class Router {
                 currentNode.children.set(key, newNode);
                 currentNode = newNode;
             } else {
-                currentNode = node
+                currentNode = node;
             }
         }
 
@@ -431,7 +449,7 @@ class Router {
     register(uri, comp) {
         this._insertRoute(uri, comp);
         return this;
-    };
+    }
 
     /**
      * @param {string} uri
@@ -441,23 +459,23 @@ class Router {
         history.pushState({ path: uri }, "", uri);
         // @ts-ignore
         this.trigger();
-    };
+    }
 
     /**
      * Search for route using radix tree
-     * @param {string} path 
-     * @param {Object} params 
+     * @param {string} path
+     * @param {Object} params
      * @returns {RouteComponent | null}
      */
     _findRoute(path, params = {}) {
-        const segments = path.split('/').filter(Boolean);
+        const segments = path.split("/").filter(Boolean);
         let currentNode = this.root;
         let matchedRoute = null;
 
         /**
-         * @param {RadixNode} node 
-         * @param {number} index 
-         * @param {Object} currentParams 
+         * @param {RadixNode} node
+         * @param {number} index
+         * @param {Object} currentParams
          * @returns {boolean}
          */
         const search = (node, index, currentParams) => {
@@ -501,23 +519,23 @@ class Router {
     /**
      * @param {object} [args={}]
      * @param {string} [path=location.pathname]
-     * @returns {VNode | VNodeComponent | string | null} 
+     * @returns {VNode | VNodeComponent | string | null}
      */
     routerView(args = {}, path = location.pathname) {
         let result = null;
         /** @type {Record<string, string|undefined>} */
         const params = {};
 
-        this.cachePath = path
+        this.cachePath = path;
 
         if (this.cache.remembered(path)) {
-            console.log('Cache hit', path);
+            console.log("Cache hit", path);
             result = this.cache.recall(path);
             this.params = result.params;
             return result.rendered;
         }
 
-        console.log('Cache miss', path);
+        console.log("Cache miss", path);
 
         const matchedRoute = this._findRoute(path, params);
 
@@ -525,23 +543,27 @@ class Router {
             this.params = params;
             result = this._render(matchedRoute, {
                 ...args,
-                ...params
+                ...params,
             });
-            this.cache.memorize(path, { rendered: result, params }, matchedRoute.cacheExp);
+            this.cache.memorize(
+                path,
+                { rendered: result, params },
+                matchedRoute.cacheExp,
+            );
             return result;
         }
 
-        if (typeof this.option?.defaultRoute === 'function') {
+        if (typeof this.option?.defaultRoute === "function") {
             return this.option.defaultRoute();
         }
 
         return result;
-    };
+    }
 
     /**
      * @param {RouteComponent} route
-     * @param {object} args 
-     * @returns {VNode | string | VNodeComponent}
+     * @param {object} args
+     * @returns {VNode | VNodeComponent | null}
      */
     _render(route, args) {
         if (this.option?.titleId && route?.title) {
@@ -551,36 +573,26 @@ class Router {
             }
         }
 
-        let component = route.component
-        
+        let component = route.component;
 
-        if (route.static) {
-            try {
-                if (route.rendered) {
-                    return route.rendered
-                }
-
-                if (isLazyComponent(component)) {
-                    if (component.importedFn) {
-                        return comp(component.importedFn, args, route.setting)
-                    }
-                    this._scheduleFetchComponent(this.cachePath, route, args);
-                    return '';
-                } else {
-                    return route.rendered = comp(component, args, route.setting);
-                }
-            } catch (e) {
-                return html.p(`Static render error: ${e}`);
-            }
+        if (route.static && route.rendered) {
+            return route.rendered;
         }
 
         try {
             if (isLazyComponent(component)) {
                 if (component.importedFn) {
-                    return comp(component.importedFn, args, route.setting)
+                    return comp(component.importedFn, args, route.setting);
                 }
                 this._scheduleFetchComponent(this.cachePath, route, args);
-                return '';
+                if (this.placeholder) {
+                    return comp(
+                        this.placeholder,
+                        {},
+                        { name: "routerPlaceholder", remember: true, invalidAfter: 0 },
+                    );
+                }
+                return null;
             } else {
                 return comp(component, args, route.setting);
             }
@@ -590,9 +602,9 @@ class Router {
     }
 
     /**
-     * @param {string} path 
+     * @param {string} path
      * @param {RouteComponent} route
-     * @param {object} args 
+     * @param {object} args
      * @returns {void}
      */
     _scheduleFetchComponent(path, route, args) {
@@ -604,15 +616,15 @@ class Router {
 
                 lazyComponent.importedFn = realComponent.default;
                 this.cache.forget(path);
-                this.cache.memorize(path, { rendered, params: args }, route.cacheExp)
+                this.cache.memorize(path, { rendered, params: args }, route.cacheExp);
 
                 if (location.pathname === path) {
                     // @ts-ignore
-                    this.trigger()
+                    this.trigger();
                 }
-            })
+            });
         } else {
-            console.error(lazyComponent, 'is VNodeFunction, not lazy component.');
+            console.error(lazyComponent, "is VNodeFunction, not lazy component.");
         }
     }
 
@@ -622,7 +634,7 @@ class Router {
      */
     use(trigger) {
         this.trigger = trigger;
-    };
+    }
 }
 
 // Create router instance

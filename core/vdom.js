@@ -412,10 +412,8 @@ const handleComponentState = (old, replacement) => {
 
         if (current.value?.cleanup) {
             try {
-                current.value.cleanup()
-            } catch (error) {
-
-            }
+                current.value.cleanup();
+            } catch (error) { }
         }
 
         current.value = undefined;
@@ -455,10 +453,8 @@ const handleComponentRetrieval = (component) => {
         }
         if (current.value?.cleanup) {
             try {
-                current.value.cleanup()
-            } catch (error) {
-
-            }
+                current.value.cleanup();
+            } catch (error) { }
         }
         current.value = undefined;
         current = current.next;
@@ -554,7 +550,7 @@ const patch = (parent, oldNode, newNode, skip = false, type = -1) => {
             return null;
         }
         cleanupVNode(oldNode);
-        if(type > -1) parent[0].removeChild(oldNode.el)
+        if (type > -1) parent[0].removeChild(oldNode.el);
         else parent.removeChild(oldNode.el);
         return null;
     }
@@ -612,13 +608,13 @@ const patch = (parent, oldNode, newNode, skip = false, type = -1) => {
 
         const el = renderVNode(newNode);
         if (type == 0) parent[1].after(el);
-        else if (type > 0) parent[2].after(el)
+        else if (type > 0) parent[2].after(el);
         else parent.appendChild(el);
         newNode.el = el;
         return newNode;
     }
 
-    if (oldNode.tag === "#fragment" && newNode.tag !== '#fragment') {
+    if (oldNode.tag === "#fragment" && newNode.tag !== "#fragment") {
         let node = oldNode.el;
         const end = oldNode._end;
 
@@ -637,14 +633,10 @@ const patch = (parent, oldNode, newNode, skip = false, type = -1) => {
         return newNode;
     }
 
-    if (oldNode.tag == '#fragment' && newNode.tag == '#fragment') {
-        patchFragmentChild(
-            parent,
-            oldNode,
-            newNode,
-        );
-        newNode.el = oldNode.el
-        newNode._end = oldNode._end
+    if (oldNode.tag == "#fragment" && newNode.tag == "#fragment") {
+        patchFragmentChild(parent, oldNode, newNode);
+        newNode.el = oldNode.el;
+        newNode._end = oldNode._end;
         return newNode;
     }
 
@@ -710,9 +702,18 @@ const patchFragmentChild = (parent, oldFragment, newFragment) => {
     const end = oldFragment._end;
     let current = parent;
 
-    const max = Math.max(oldFragment.children.length, newFragment.children.length)
-    for (let i = 0; i < max; i++){
-        patch([parent, start, current], oldFragment.children[i], newFragment.children[i], false, i)
+    const max = Math.max(
+        oldFragment.children.length,
+        newFragment.children.length,
+    );
+    for (let i = 0; i < max; i++) {
+        patch(
+            [parent, start, current],
+            oldFragment.children[i],
+            newFragment.children[i],
+            false,
+            i,
+        );
         if (i == 0) {
             current = newFragment.children[0].el;
         } else if (i > 0) {
@@ -721,7 +722,7 @@ const patchFragmentChild = (parent, oldFragment, newFragment) => {
     }
 
     return newFragment;
-}
+};
 
 /**
  *

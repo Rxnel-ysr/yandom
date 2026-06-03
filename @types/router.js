@@ -11,7 +11,7 @@
  * @property {string|null} [title]
  * @property {VNodeComponentSetting} [setting]
  * @property {boolean} [static]
- * @property {Object|null} [rendered]
+ * @property {VNode|null} [rendered]
  * @property {number} [cacheExp] 
  */
 
@@ -31,6 +31,7 @@
  * @typedef {Object} RouterOptions
  * @property {string|null} [prefix]
  * @property {Function|null} [defaultRoute]
+ * @property {VNodeFunction|null} [placeholder]
  * @property {string} [titleId] 
  * @property {number} [cacheExp] 
  * @property {HTMLElement|null} [titleEl] 
