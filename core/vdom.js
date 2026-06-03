@@ -529,7 +529,7 @@ const handleComponent = (parent, old, newOne) => {
  * @param {boolean} skip
  * @returns {VNode | null}
  */
-const patch = (parent, oldNode, newNode, skip = false, type = 0) => {
+const patch = (parent, oldNode, newNode, skip = false, type = -1) => {
     if (oldNode == null && newNode == null) return null;
 
     if (!skip && (isVNodeComponent(oldNode) || isVNodeComponent(newNode))) {
@@ -554,7 +554,8 @@ const patch = (parent, oldNode, newNode, skip = false, type = 0) => {
             return null;
         }
         cleanupVNode(oldNode);
-        parent.removeChild(oldNode.el);
+        if(type > -1) parent[0].removeChild(oldNode.el)
+        else parent.removeChild(oldNode.el);
         return null;
     }
 
@@ -610,7 +611,8 @@ const patch = (parent, oldNode, newNode, skip = false, type = 0) => {
         }
 
         const el = renderVNode(newNode);
-        if (type === 1) parent.before(el);
+        if (type == 0) parent[1].after(el);
+        else if (type > 0) parent[2].after(el)
         else parent.appendChild(el);
         newNode.el = el;
         return newNode;
@@ -636,18 +638,11 @@ const patch = (parent, oldNode, newNode, skip = false, type = 0) => {
     }
 
     if (oldNode.tag == '#fragment' && newNode.tag == '#fragment') {
-        const max = Math.max(oldNode.children.length, newNode.children.length);
-        for (let i = 0; i < max; i++) {
-            requestAnimationFrame(() => {
-                patch(
-                    newNode.children[i] ? oldNode._end : parent,
-                    oldNode.children[i],
-                    newNode.children[i],
-                    skip,
-                    1
-                );
-            });
-        }
+        patchFragmentChild(
+            parent,
+            oldNode,
+            newNode,
+        );
         newNode.el = oldNode.el
         newNode._end = oldNode._end
         return newNode;
@@ -663,7 +658,8 @@ const patch = (parent, oldNode, newNode, skip = false, type = 0) => {
         }
 
         const el = renderVNode(newNode);
-        parent.replaceChild(el, oldNode.el);
+        if (type > -1) parent[0].replaceChild(el, oldNode.el);
+        else parent.replaceChild(el, oldNode.el);
         newNode.el = el;
         return newNode;
     }
@@ -694,13 +690,11 @@ const patch = (parent, oldNode, newNode, skip = false, type = 0) => {
     } else {
         const max = Math.max(oldChildren.length, newChildren.length);
         for (let i = 0; i < max; i++) {
-            requestAnimationFrame(() => {
-                patch(
-                    oldNode?.tag === "#fragment" ? parent : oldNode.el,
-                    oldChildren[i],
-                    newChildren[i],
-                );
-            });
+            patch(
+                oldNode?.tag === "#fragment" ? parent : oldNode.el,
+                oldChildren[i],
+                newChildren[i],
+            );
         }
     }
 
@@ -710,6 +704,24 @@ const patch = (parent, oldNode, newNode, skip = false, type = 0) => {
     newNode.el = oldNode.el;
     return newNode;
 };
+
+const patchFragmentChild = (parent, oldFragment, newFragment) => {
+    const start = oldFragment.el;
+    const end = oldFragment._end;
+    let current = parent;
+
+    const max = Math.max(oldFragment.children.length, newFragment.children.length)
+    for (let i = 0; i < max; i++){
+        patch([parent, start, current], oldFragment.children[i], newFragment.children[i], false, i)
+        if (i == 0) {
+            current = newFragment.children[0].el;
+        } else if (i > 0) {
+            current = current?.nextSibling || end;
+        }
+    }
+
+    return newFragment;
+}
 
 /**
  *
