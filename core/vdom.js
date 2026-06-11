@@ -6,9 +6,10 @@ import {
     overwrite,
     getCurrentHookNode,
 } from "./vdom.hooks.js";
-import { memorize, recall, remembered } from "./memory.js";
+import Memory from "./memory.js";
 
 let jobs = [];
+const memory = new Memory()
 const memoryPrefix = "ComponentState_";
 const _keys = {};
 const getKey = (vnode) => vnode?.props?.key ?? null;
@@ -396,9 +397,9 @@ const handleComponentState = (old, replacement) => {
     let storedMemory = [];
     if (
         replacement.remember &&
-        remembered(memoryPrefix + replacement.stringified)
+        memory.remembered(memoryPrefix + replacement.stringified)
     ) {
-        storedMemory = recall(memoryPrefix + replacement.stringified);
+        storedMemory = memory.recall(memoryPrefix + replacement.stringified);
     }
 
     for (let i = 0; i < Math.max(oldHookCount, replacementHookCount); i++) {
@@ -435,7 +436,7 @@ const handleComponentState = (old, replacement) => {
         orphan(old.compHooks - replacement.compHooks);
     }
 
-    memorize(memoryPrefix + old.stringified, store, old.invalidAfter);
+    memory.memorize(memoryPrefix + old.stringified, store, old.invalidAfter);
 };
 
 /**
@@ -463,7 +464,7 @@ const handleComponentRetrieval = (component) => {
     orphan(component.compHooks - 1);
 
     if (component.remember) {
-        memorize(
+        memory.memorize(
             memoryPrefix + component.stringified,
             data,
             component.invalidAfter,
@@ -478,9 +479,9 @@ const handleComponentRetrieval = (component) => {
  */
 const handleComponentApplyState = (component) => {
     allocate(component.compHooks - 1);
-    if (component.remember && remembered(memoryPrefix + component.stringified)) {
+    if (component.remember && memory.remembered(memoryPrefix + component.stringified)) {
         overwrite(
-            recall(memoryPrefix + component.stringified),
+            memory.recall(memoryPrefix + component.stringified),
             component.recompute,
         );
     }

@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 import path from 'path';
 // import Url from 'url';
 import { createWSServer } from './webSock.js';
-import { watch } from '../core/file-watcher.js';
+import { watch } from './file-watcher.js';
 
 const root = process.cwd();
 const mimeTypes = {

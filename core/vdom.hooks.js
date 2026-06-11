@@ -134,7 +134,7 @@ function countHooks(stringFn) {
  * @param {object} args
  * Args that will be passed on th `compFn`
  *
- * @param {VNodeComponentSetting} [options]
+ * @param {VNodeComponentSetting | null} [options]
  * Component configuration object.
  * - `name`: Optional component identifier.
  * - `hook`: Optional hooks count inside `compFn`.

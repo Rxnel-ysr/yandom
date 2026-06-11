@@ -8,35 +8,35 @@
 /**
  * @typedef {Object} RouteComponent
  * @property {LazyComponent | VNodeFunction} component
- * @property {string|null} [title]
- * @property {VNodeComponentSetting} [setting]
+ * @property {string} [title]
+ * @property {VNodeComponentSetting | null} [setting]
  * @property {boolean} [static]
- * @property {VNode|null} [rendered]
- * @property {number} [cacheExp] 
+ * @property {VNode | null} [rendered]
+ * @property {number} [cacheExp]
  */
 
 /**
  * @typedef {Object} Route
  * @property {string} uri
  * @property {LazyComponent | VNodeFunction} component
- * @property {VNodeComponentSetting} [cache]
- * @property {string|null} [title]
- * @property {number} [cacheExp] 
+ * @property {VNodeComponentSetting | null} [cache]
+ * @property {string} [title]
+ * @property {VNode | null} [rendered]
+ * @property {number} [cacheExp]
  * @property {boolean} [static]
- * @property {Array<Route>} [children]
+ * @property {Route[]} [children]
  */
 
 /**
- * Router option type declaration
  * @typedef {Object} RouterOptions
- * @property {string|null} [prefix]
- * @property {Function|null} [defaultRoute]
- * @property {VNodeFunction|null} [placeholder]
- * @property {string} [titleId] 
- * @property {number} [cacheExp] 
- * @property {HTMLElement|null} [titleEl] 
+ * @property {string} [prefix]
+ * @property {VNodeFunction | null} [defaultRoute]
+ * @property {VNodeFunction | null} [placeholder]
+ * @property {string} [titleId]
+ * @property {number} [cacheExp]
+ * @property {HTMLElement | null} [titleEl]
  * @property {Record<string, any>} [elementProps]
- * @property {string|null} [element]
- * @property {Array<Route>} [routes]
+ * @property {string} [element]
+ * @property {Route[]} [routes]
  * @property {number} [cleanUpInterval]
  */

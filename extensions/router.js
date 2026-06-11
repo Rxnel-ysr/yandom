@@ -5,7 +5,7 @@
 import { currentUri, trim, value } from "../helper/helper.js";
 import { comp, triggerRerender } from "../core/vdom.hooks.js";
 import { createVNode, html, pushJob, registerVdom } from "../core/vdom.js";
-import Memory from "../core/memory-class.js";
+import Memory from "../core/memory.js";
 
 /**
  * @param {any} v
@@ -62,7 +62,7 @@ class RadixNode {
 class Router {
     /** @type {RadixNode} */
     root;
-    /** @type {Function|undefined} */
+    /** @type {(() => void) | undefined} */
     trigger;
     /** @type {Record<string, any>} */
     errors = {};
@@ -74,23 +74,23 @@ class Router {
     elementProps = {};
     /** @type {string} */
     cachePath = "";
-    /** @type {RouteComponent[]} */
-    routes = [];
+    /** @type {Record<string, RouteComponent>} */
+    routes = {};
     /**
      * @type {RouterOptions}
      */
     option;
 
-    /** @type {Record<string, string> | {}} */
+    /** @type {Record<string, string | undefined>} */
     params = {};
 
-    /** @type {undefined |((to: string, from: string, next: Function) => void)} */
+    /** @type {((to: string, from: string, next: Function) => void) | undefined} */
     middleware;
 
-    /** @type {Record<string, string | undefined>|undefined} */
+    /** @type {Record<string, string | undefined> | undefined} */
     proxy;
 
-    /** @type {VNodeFunction|null} */
+    /** @type {VNodeFunction | null} */
     placeholder = null;
 
     /**
@@ -128,7 +128,7 @@ class Router {
                     });
                 });
             }
-            this.routes.push(route);
+            this.routes[route.uri] = route;
         });
     }
 
@@ -185,7 +185,7 @@ class Router {
 
     /**
      * @param {string} hash
-     * @param {string} block
+     * @param {ScrollLogicalPosition} block
      * @returns {void}
      */
     scrollToHash(hash, block = "start") {
@@ -351,7 +351,7 @@ class Router {
      * Search for a route in the radix tree
      * @param {string} path
      * @param {RadixNode} node
-     * @param {Object} params
+     * @param {Record<string, string>} params
      * @returns {RouteComponent | null}
      * @private
      */
@@ -464,7 +464,7 @@ class Router {
     /**
      * Search for route using radix tree
      * @param {string} path
-     * @param {Object} params
+     * @param {Record<string, string | undefined>} params
      * @returns {RouteComponent | null}
      */
     _findRoute(path, params = {}) {
@@ -475,7 +475,7 @@ class Router {
         /**
          * @param {RadixNode} node
          * @param {number} index
-         * @param {Object} currentParams
+         * @param {Record<string, string | undefined>} currentParams
          * @returns {boolean}
          */
         const search = (node, index, currentParams) => {
@@ -532,7 +532,9 @@ class Router {
             console.log("Cache hit", path);
             result = this.cache.recall(path);
             this.params = result.params;
-            this.option.titleEl.innerText = result.route.title;
+            if (this.option.titleEl && result.route.title) {
+                this.option.titleEl.innerText = result.route.title;
+            }
             return result.rendered;
         }
 
@@ -548,7 +550,7 @@ class Router {
             });
             this.cache.memorize(
                 path,
-                { rendered: result, params,  route: matchedRoute},
+                { rendered: result, params, route: matchedRoute },
                 matchedRoute.cacheExp,
             );
             return result;
@@ -576,7 +578,7 @@ class Router {
 
         let component = route.component;
 
-        if (route.static && route.rendered) {
+        if (route.static && route?.rendered) {
             return route.rendered;
         }
 
@@ -630,7 +632,7 @@ class Router {
     }
 
     /**
-     * @param {Function} trigger Function to trigger reload
+     * @param {() => void} trigger Function to trigger reload
      * @returns {void}
      */
     use(trigger) {
@@ -639,6 +641,6 @@ class Router {
 }
 
 // Create router instance
-const create = Router.make;
+const createRouter = Router.make;
 
-export { Router, create, lazyLoad };
+export { Router, createRouter, lazyLoad };
