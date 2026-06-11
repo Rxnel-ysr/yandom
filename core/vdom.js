@@ -9,7 +9,7 @@ import {
 import Memory from "./memory.js";
 
 let jobs = [];
-const memory = new Memory()
+const memory = new Memory();
 const memoryPrefix = "ComponentState_";
 const _keys = {};
 const getKey = (vnode) => vnode?.props?.key ?? null;
@@ -479,7 +479,10 @@ const handleComponentRetrieval = (component) => {
  */
 const handleComponentApplyState = (component) => {
     allocate(component.compHooks - 1);
-    if (component.remember && memory.remembered(memoryPrefix + component.stringified)) {
+    if (
+        component.remember &&
+        memory.remembered(memoryPrefix + component.stringified)
+    ) {
         overwrite(
             memory.recall(memoryPrefix + component.stringified),
             component.recompute,
@@ -626,13 +629,13 @@ const patch = (parent, oldNode, newNode, skip = false, type = -1) => {
         while (node && node !== end) {
             const next = node.nextSibling;
             if (type > -1) parent[0].removeChild(node);
-            else parent.removeChild(node)
+            else parent.removeChild(node);
             node = next;
         }
 
         const newEl = renderVNode(newNode);
         if (type > -1) parent[0].removeChild(node);
-        else parent.replaceChild(newEl, oldNode._end)
+        else parent.replaceChild(newEl, oldNode._end);
 
         return newNode;
     }
@@ -650,7 +653,7 @@ const patch = (parent, oldNode, newNode, skip = false, type = -1) => {
         if (newNode.tag === "#fragment") {
             const frag = renderVNode(newNode);
             if (type > -1) parent[0].replaceChild(frag, oldNode.el);
-            else   parent.replaceChild(frag, oldNode.el);
+            else parent.replaceChild(frag, oldNode.el);
             return newNode;
         }
 
@@ -824,7 +827,65 @@ function vnode(tag, props, ...children) {
  * html.$(child1, child2)
  */
 const html = new Proxy(
-    {},
+    /**
+     * Built-in DSL actions.
+     */
+    {
+        /**
+         * Replace target children with element.
+         */
+        mount: (el, selector, scope = document) =>
+            getTarget(selector, scope).replaceChildren(el),
+
+        /**
+         * Append element to target.
+         */
+        push: (el, selector, scope = document) =>
+            getTarget(selector, scope).appendChild(el),
+
+        /**
+         * Mount into Shadow DOM (open).
+         * Reuses existing shadow root if present.
+         */
+        mountShadow: (el, selector, scope = document) => {
+            const target = getTarget(selector, scope);
+            if (!target._shadow) {
+                target._shadow = target.attachShadow({ mode: "open" });
+            }
+            target._shadow.replaceChildren(el);
+            return target._shadow;
+        },
+
+        /**
+         * Create VNode from tag, props, and children.
+         *
+         * @param {string} tag
+         * @param {object} props
+         * @param  {...VNodeChild[][]} children
+         * @returns
+         */
+        element: (tag, props = {}, ...children) =>
+            createVNode(tag, props, children),
+
+        /**
+         * Render Virtual DOM tree.
+         */
+        vdom: RenderVDOM,
+
+        /**
+         * Placeholder / noop hook.
+         */
+        _: __,
+
+        /**
+         * Fragment factory.
+         */
+        $: (...children) => ({
+            tag: "#fragment",
+            children: flattenChildren(children).map(wrapPrimitive),
+            isComp: false,
+        }),
+    },
     {
         /**
          * Trap for dynamic property access.
@@ -837,82 +898,20 @@ const html = new Proxy(
          */
         get: (_, tag) => {
             /**
-             * Built-in DSL actions.
-             */
-            const actions = {
-                /**
-                 * Replace target children with element.
-                 */
-                mount: (el, selector, scope = document) =>
-                    getTarget(selector, scope).replaceChildren(el),
-
-                /**
-                 * Append element to target.
-                 */
-                push: (el, selector, scope = document) =>
-                    getTarget(selector, scope).appendChild(el),
-
-                /**
-                 * Mount into Shadow DOM (open).
-                 * Reuses existing shadow root if present.
-                 */
-                mountShadow: (el, selector, scope = document) => {
-                    const target = getTarget(selector, scope);
-                    if (!target._shadow) {
-                        target._shadow = target.attachShadow({ mode: "open" });
-                    }
-                    target._shadow.replaceChildren(el);
-                    return target._shadow;
-                },
-
-                /**
-                 * Create VNode from tag, props, and children.
-                 * 
-                 * @param {string} tag 
-                 * @param {object} props 
-                 * @param  {...VNodeChild[][]} children 
-                 * @returns 
-                 */
-                element: (tag, props = {}, ...children) =>
-                    createVNode(tag, props, children),
-
-                /**
-                 * Render Virtual DOM tree.
-                 */
-                vdom: RenderVDOM,
-
-                /**
-                 * Placeholder / noop hook.
-                 */
-                _: __,
-
-                /**
-                 * Fragment factory.
-                 */
-                $: (...children) => ({
-                    tag: "#fragment",
-                    children: flattenChildren(children).map(wrapPrimitive),
-                    isComp: false,
-                }),
-
-                ...customVDom,
-            };
-
-            /**
              * Resolution order:
              * 1. Built-in actions
              * 2. Custom VDOM extensions
              * 3. HTML tag factory
              */
             return (
-                actions[tag] ||
+                _[tag] || customVDom[tag] ||
                 /**
                  * HTML element VNode factory.
                  *
                  * @param {object|string|any[]} [props]
                  * @param {...any} children
                  *
-                 * @returns {object} VNode
+                 * @returns {VNode} VNode
                  */
                 ((props = {}, ...children) => vnode(tag, props, ...children))
             );

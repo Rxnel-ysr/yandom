@@ -11,7 +11,8 @@
  *   mountShadow: (el: Element, selector: string, scope?: ParentNode) => ShadowRoot,
  *   $: (...children: VNodeChild[]) => VNode,
  *   vdom: typeof RenderVDOM,
- *   _: typeof __
+ *   _: typeof __,
+ *   element: (tag: string, props?: Record<string, any>|string, ...children: VNodeChild[]) => VNode,
  * }  & Record<string, (props?: Record<string, any>|string, ...children: VNodeChild[]) => VNode> } HTMLProxy
  */
 

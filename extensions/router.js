@@ -229,6 +229,9 @@ class Router {
                 {
                     ...this.elementProps,
                     ...props,
+                    /**
+                     * @param {PointerEvent} e 
+                     */
                     onclick: (e) => {
                         e.preventDefault();
                         let different = currentUri() !== destination;
