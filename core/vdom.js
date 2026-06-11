@@ -866,6 +866,17 @@ const html = new Proxy(
                 },
 
                 /**
+                 * Create VNode from tag, props, and children.
+                 * 
+                 * @param {string} tag 
+                 * @param {object} props 
+                 * @param  {...VNodeChild[][]} children 
+                 * @returns 
+                 */
+                element: (tag, props = {}, ...children) =>
+                    createVNode(tag, props, children),
+
+                /**
                  * Render Virtual DOM tree.
                  */
                 vdom: RenderVDOM,
