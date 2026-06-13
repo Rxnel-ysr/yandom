@@ -1,0 +1,35 @@
+{
+  "name": "yamdom",
+  "version": "1.0.0",
+  "description": "A lightweight, reactive Virtual DOM library with custom hooks, component tracking, and advanced DOM diffing.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "core",
+    "router",
+    "helper",
+    "extensions",
+    "@types",
+    "index.js"
+  ],
+  "keywords": [
+    "vdom",
+    "spa",
+    "reactive",
+    "dom-diffing",
+    "esm"
+  ],
+  "author": "Ronel (https://github.com/Rxnel-ysr)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rxnel-ysr/yamdom.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rxnel-ysr/yamdom/issues"
+  },
+  "homepage": "https://github.com/Rxnel-ysr/yamdom#readme"
+}

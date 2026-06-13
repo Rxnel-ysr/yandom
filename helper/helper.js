@@ -1,7 +1,5 @@
 "use strict";
-import env from /** Skip */ "../../env.json" with { type: "json" };
-
-class FileReader {
+class FileReaderHelper {
   constructor(basePath = "") {
     this.basePath = basePath;
   }
@@ -13,7 +11,7 @@ class FileReader {
   }
 }
 
-const fileReader = new FileReader(window.location.pathname);
+const fileReader = new FileReaderHelper('/');
 
 const getFileAsString = async (filename) => {
   return await fileReader.getFileAsString(filename);
@@ -85,6 +83,15 @@ function value(v, defaultV) {
   return typeof v == "undefined" ? defaultV : v;
 }
 
+/**
+ * @param {any} v
+ * @param {() => any} defaultV
+ * @returns {any}
+ */
+function valueComputed(v, defaultV) {
+  return typeof v == "undefined" ? defaultV() : v;
+}
+
 function currentUri(withHash = false) {
   let res = withHash
     ? `${window.location.pathname}${window.location.hash}`
@@ -122,7 +129,8 @@ export {
   trim,
   currentUri,
   uuidv4,
-  FileReader,
+  FileReaderHelper,
   getFileAsString,
   value,
+  valueComputed,
 };

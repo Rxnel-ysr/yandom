@@ -112,7 +112,7 @@ class Router {
             this.register(`/${trim(route.uri, "/")}`, {
                 component: route.component,
                 title: route?.title,
-                setting: route?.cache,
+                setting: route?.cache || {},
                 static: route?.static,
                 cacheExp: route?.cacheExp || this.option.cacheExp || 0,
             });
@@ -122,7 +122,7 @@ class Router {
                     this.register(`/${trim(route.uri, "/")}/${trim(subroute.uri, "/")}`, {
                         component: subroute.component,
                         title: subroute?.title,
-                        setting: subroute?.cache,
+                        setting: subroute?.cache || {},
                         static: subroute?.static,
                         cacheExp: subroute?.cacheExp || this.option.cacheExp || 0,
                     });
@@ -532,7 +532,6 @@ class Router {
         this.cachePath = path;
 
         if (this.cache.remembered(path)) {
-            console.log("Cache hit", path);
             result = this.cache.recall(path);
             this.params = result.params;
             if (this.option.titleEl && result.route.title) {
@@ -540,8 +539,6 @@ class Router {
             }
             return result.rendered;
         }
-
-        console.log("Cache miss", path);
 
         const matchedRoute = this._findRoute(path, params);
 
