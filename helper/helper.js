@@ -23,14 +23,7 @@ const getFileAsString = async (filename) => {
  * @return {string}
  */
 function file(uri) {
-  let res = "";
-  uri = ltrim(uri, "/");
-  if (env.deploy?.prod) {
-    res = `${window.location.origin}/${trim(value(env?.deploy?.base, ""), "/")}/${uri}`;
-  } else {
-    res = `${window.location.origin}/${uri}`;
-  }
-  return res;
+  return `${window.location.origin}/${ltrim(uri, "/") }`;
 }
 
 /**
