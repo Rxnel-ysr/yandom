@@ -395,16 +395,25 @@ const handleComponentState = (old, replacement) => {
     let current = getCurrentHookNode();
     let store = new Array(oldHookCount);
     let storedMemory = [];
+    let prev = null;
     if (
         replacement.remember &&
         memory.remembered(memoryPrefix + replacement.stringified)
     ) {
         storedMemory = memory.recall(memoryPrefix + replacement.stringified);
+        console.log(storedMemory)
     }
 
     for (let i = 0; i < Math.max(oldHookCount, replacementHookCount); i++) {
         if (i > oldHookCount) {
-            current = { next: current?.next };
+            let newNode = { value: undefined, next: current?.next };
+            if (!current) {
+                prev.next = current = newNode
+            } else {
+                current.next = newNode;
+                prev = current;
+                current = newNode;
+            }
         } else {
             if (old.remember) {
                 store[i] = current.value;
@@ -421,6 +430,7 @@ const handleComponentState = (old, replacement) => {
 
         if (replacement.remember) {
             current.value = storedMemory[i];
+            // if (storedMemory[i] == 'data') Object.freeze(current), console.log(current);
             if (
                 replacement.recompute &&
                 typeof current.value?.recompute !== "undefined"
@@ -429,6 +439,7 @@ const handleComponentState = (old, replacement) => {
             }
         }
 
+        prev = current
         current = current.next;
     }
 
@@ -436,7 +447,10 @@ const handleComponentState = (old, replacement) => {
         orphan(old.compHooks - replacement.compHooks);
     }
 
-    memory.memorize(memoryPrefix + old.stringified, store, old.invalidAfter);
+    if (old.remember) {
+        console.log(store)
+        memory.memorize(memoryPrefix + old.stringified, store, old.invalidAfter);
+    }
 };
 
 /**

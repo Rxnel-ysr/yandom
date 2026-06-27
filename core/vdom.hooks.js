@@ -1,5 +1,5 @@
 "use strict";
-import { value } from "../helper/helper.js";
+import { value, valueComputed } from "../helper/helper.js";
 import { RenderVDOM, executeJobs, getTarget } from "./vdom.js";
 
 let currentComponent = null,
@@ -168,8 +168,12 @@ const comp = (
             compHooks: null,
         };
 
-    counter = value(options?.hook, countHooks(compFn.toString()));
-    name = value(options?.name, comp.toString() + JSON.stringify(options));
+    counter = valueComputed(options?.hook, () => countHooks(compFn.toString()));
+    if (counter < 1) {
+        return result.render();
+    }
+
+    name = valueComputed(options?.name,() => comp.toString() + JSON.stringify(options));
 
     result.stringified = name;
     result.compHooks = counter;
