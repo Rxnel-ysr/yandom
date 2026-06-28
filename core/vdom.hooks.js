@@ -169,10 +169,6 @@ const comp = (
         };
 
     counter = valueComputed(options?.hook, () => countHooks(compFn.toString()));
-    if (counter < 1) {
-        return result.render();
-    }
-
     name = valueComputed(options?.name,() => comp.toString() + JSON.stringify(options));
 
     result.stringified = name;

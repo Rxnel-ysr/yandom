@@ -26,10 +26,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Rxnel-ysr/yamdom.git"
+    "url": "git+https://github.com/Rxnel-ysr/yandom.git"
   },
   "bugs": {
-    "url": "https://github.com/Rxnel-ysr/yamdom/issues"
+    "url": "https://github.com/Rxnel-ysr/yandom/issues"
   },
-  "homepage": "https://github.com/Rxnel-ysr/yamdom#readme"
+  "homepage": "https://github.com/Rxnel-ysr/yandom#readme"
 }

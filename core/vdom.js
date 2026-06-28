@@ -278,40 +278,42 @@ const renderVNode = (vnode, parentIsSvg = false) => {
         updateRef(ref, el);
     }
 
-    for (const [key, value] of Object.entries(work.props)) {
-        if (key === "useCleanup" && typeof value === "function") continue;
-        if (key === "ref" || key === "keyed") continue; // Already handled
-        if (key === "key") setKey(value, work);
+    if(work?.props){
+        for (const [key, value] of Object.entries(work.props)) {
+            if (key === "useCleanup" && typeof value === "function") continue;
+            if (key === "ref" || key === "keyed") continue; // Already handled
+            if (key === "key") setKey(value, work);
 
-        if (key === "class") {
-            if (isSvg) {
-                el.setAttribute(
-                    "class",
-                    Array.isArray(value) ? value.filter(Boolean).join(" ") : value,
-                );
+            if (key === "class") {
+                if (isSvg) {
+                    el.setAttribute(
+                        "class",
+                        Array.isArray(value) ? value.filter(Boolean).join(" ") : value,
+                    );
+                } else {
+                    el.className = Array.isArray(value)
+                        ? value.filter(Boolean).join(" ")
+                        : value;
+                }
+            } else if (key === "style") {
+                if (typeof value === "string") {
+                    el.style.cssText = value;
+                } else {
+                    Object.assign(el.style, value);
+                }
+            } else if (key.startsWith("on") && typeof value === "function") {
+                el.addEventListener(key.slice(2).toLowerCase(), value);
             } else {
-                el.className = Array.isArray(value)
-                    ? value.filter(Boolean).join(" ")
-                    : value;
+                el.setAttribute(key, value);
             }
-        } else if (key === "style") {
-            if (typeof value === "string") {
-                el.style.cssText = value;
-            } else {
-                Object.assign(el.style, value);
-            }
-        } else if (key.startsWith("on") && typeof value === "function") {
-            el.addEventListener(key.slice(2).toLowerCase(), value);
-        } else {
-            el.setAttribute(key, value);
         }
-    }
 
-    if (work.props.shadow) {
-        const shadow = el.attachShadow({
-            mode: work.props.shadow === true ? "open" : work.props.shadow,
-        });
-        el._shadow = shadow;
+        if (work.props?.shadow) {
+            const shadow = el.attachShadow({
+                mode: work.props.shadow === true ? "open" : work.props.shadow,
+            });
+            el._shadow = shadow;
+        }
     }
 
     const children = Array.isArray(work.children)
@@ -392,6 +394,14 @@ const handleComponentState = (old, replacement) => {
     let oldHookCount = old.compHooks,
         replacementHookCount = replacement.compHooks;
 
+    if (oldHookCount === 0 && replacementHookCount > 0) {
+        return handleComponentApplyState(replacement);
+    } else if (replacementHookCount === 0 && oldHookCount > 0) {
+        return handleComponentRetrieval(old);
+    } else if (replacementHookCount === 0 && oldHookCount === 0){
+        return;
+    }
+
     let current = getCurrentHookNode();
     let store = new Array(oldHookCount);
     let storedMemory = [];
@@ -401,7 +411,6 @@ const handleComponentState = (old, replacement) => {
         memory.remembered(memoryPrefix + replacement.stringified)
     ) {
         storedMemory = memory.recall(memoryPrefix + replacement.stringified);
-        console.log(storedMemory)
     }
 
     for (let i = 0; i < Math.max(oldHookCount, replacementHookCount); i++) {
