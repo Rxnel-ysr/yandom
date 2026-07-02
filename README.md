@@ -1,7 +1,9 @@
-# yandom
+# yandom  
+[![](https://data.jsdelivr.com/v1/package/gh/rxnel-ysr/yandom/badge)](https://www.jsdelivr.com/package/gh/rxnel-ysr/yandom)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/rxnel-ysr/yandom/blob/main/LICENSE)
 
 Yet Another VDOM - A lightweight, hook-based virtual DOM library with a fluent proxy-based DSL — write UIs in plain JS, no JSX, no compiler.
-
+  
 ## Table of Contents
 
 - [yandom](#yandom)
