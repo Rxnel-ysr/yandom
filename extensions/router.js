@@ -3,8 +3,7 @@
 
 "use strict";
 import { currentUri, trim, value } from "../helper/helper.js";
-import { comp, triggerRerender } from "../core/vdom.hooks.js";
-import { createVNode, html, pushJob, registerVdom } from "../core/vdom.js";
+import { comp, triggerRerender, createVNode, html, pushJob, registerVdom } from "../core/vdom.js";
 import Memory from "../core/memory.js";
 
 /**
@@ -263,7 +262,7 @@ class Router {
     fallback(component, opt = {}) {
         let c;
         if (typeof component == 'function') {
-            c = comp(component, {}, { name: "defaultRoute",  ...opt})
+            c = comp(component, {}, { name: "defaultRoute", ...opt })
         } else {
             c = component;
         }

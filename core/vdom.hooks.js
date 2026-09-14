@@ -1,315 +1,5 @@
 "use strict";
 import { value, valueComputed } from "../helper/helper.js";
-import { RenderVDOM, executeJobs, getTarget } from "./vdom.js";
-
-let currentComponent = null,
-    handler = null,
-    disableRerender = false,
-    renderDebounce = null;
-
-/**
- *
- * @param {Object} hookNode
- * @returns {Object}
- */
-const nextNode = (hookNode) => {
-    return (hookNode.next = hookNode.next || { next: null });
-};
-
-const resetContext = () => {
-    currentComponent.hookNode = currentComponent.hooks;
-};
-
-const triggerRerender = () => {
-    if (handler) handler();
-};
-
-const trailMaker = (n = 1) => {
-    let head = { next: null };
-    let node = head;
-    for (let i = 1; i <= n; i++) {
-        node = node.next = { next: null };
-    }
-
-    return [head, node];
-};
-
-/**
- * Forgets the next n states in the hook chain
- * @param {number} [n=1] - Number of subsequent hook states to forget
- */
-const resets = (n = 1) => {
-    if (!currentComponent) return;
-
-    let hookNode = currentComponent.hookNode;
-    if (!hookNode) return;
-
-    for (let i = 1; i <= n && hookNode.next; i++) {
-        hookNode.value = undefined;
-        hookNode = hookNode.next;
-    }
-};
-
-const allocate = (n) => {
-    let start = currentComponent.hookNode;
-    let actual = n - 1;
-
-    if (actual > -1) {
-        let [head, tail] = trailMaker(actual);
-        tail.next = start.next;
-        start.next = head;
-    }
-};
-
-/**
- *
- * @param {any[]} array
- * @param {Boolean} recompute
- */
-const overwrite = (array, recompute = false) => {
-    let start = currentComponent.hookNode;
-    array.map((e) => {
-        if (recompute && typeof e?.recompute !== "undefined") {
-            e.recompute = true;
-        }
-        start.value = e;
-        start = start.next;
-    });
-};
-
-const orphan = (n) => {
-    let start = currentComponent.hookNode;
-
-    let end = start;
-
-    for (let i = 1; i <= n; i++) {
-        end = end.next = end.next;
-    }
-    start.next = undefined;
-    start.next = end?.next || null;
-};
-
-const getData = (until) => {
-    if (!currentComponent) return;
-
-    const hookNode = currentComponent.hookNode;
-    if (!hookNode) return;
-    let n = 0;
-    let data = [];
-
-    let current = hookNode;
-    while (n < until && current) {
-        data.push(current?.value || undefined);
-        current = current?.next;
-        n++;
-    }
-
-    return data;
-};
-
-const getCurrentHookNode = () => {
-    if (!currentComponent) return;
-    return currentComponent.hookNode;
-};
-
-/**
- *
- * @param {string|VNodeFunction} stringFn
- * @returns {number}
- */
-function countHooks(stringFn) {
-    return (
-        stringFn.match(
-            /(?<!\/\/[^\n]*)(useEffect\(|useState\(|useRef\(|useMemo\()/gm,
-        ) || []
-    ).length;
-}
-
-/**
- * Component factory with hook tracking and optional memoization.
- *
- * @param {VNodeFunction} compFn
- * Component render function. Must be pure. Receives `args`.
- *
- * @param {object} args
- * Args that will be passed on th `compFn`
- *
- * @param {VNodeComponentSetting | null} [options]
- * Component configuration object.
- * - `name`: Optional component identifier.
- * - `hook`: Optional hooks count inside `compFn`.
- * - `remember`: Optional, decide should state retained or not.
- * - `recompute`: Optional, decide should empty dependency useEffect will recompute or no.
- * - `invalidAfter`: Optional, decide how many millisecond into invalidation of state stored, 0 to never invalidate.
- *
- * @returns {VNodeComponent}
- * Component descriptor object.
- */
-const comp = (
-    compFn,
-    args = {},
-    options = {
-        name: null,
-        hook: null,
-        remember: false,
-        recompute: false,
-        invalidAfter: undefined,
-    },
-) => {
-    let name,
-        counter = 0,
-        result = {
-            render: () => compFn(args),
-            isComp: true,
-            remember: value(options?.remember, false),
-            recompute: value(options?.recompute, false),
-            invalidAfter: value(options?.invalidAfter, 0),
-            stringified: null,
-            compHooks: null,
-        };
-
-    counter = valueComputed(options?.hook, () => countHooks(compFn.toString()));
-    name = valueComputed(options?.name,() => comp.toString() + JSON.stringify(options));
-
-    result.stringified = name;
-    result.compHooks = counter;
-
-    return result;
-};
-
-/**
- * Destroys all remaining hook states from current position to end of chain
- */
-const destroy = () => {
-    if (!currentComponent) return;
-
-    let hookNode = currentComponent.hookNode;
-    if (!hookNode) return;
-
-    while (hookNode.next) {
-        hookNode.value = undefined;
-
-        hookNode = hookNode.next;
-    }
-    currentComponent.hookNode = hookNode;
-};
-
-/**
- * A custom `useState` hook for reactive state management.
- *
- * @template T
- * @param {T} initial - The initial state value.
- * @param {Boolean} handleInputEvent - Automatically handle input event and take the value.
- * @returns {[T, (val: T | ((prev: T) => T)) => void]} A tuple: current state and a setter function.
- */
-const useState = (initial, handleInputEvent = false) => {
-    let hookNode = currentComponent?.hookNode;
-
-    if (typeof hookNode?.value === "undefined") {
-        hookNode.value = initial;
-    }
-
-    const set = (val) => {
-        if (handleInputEvent && val instanceof InputEvent) {
-            val = val.target.value;
-        }
-        hookNode.value = typeof val == "function" ? val(hookNode?.value) : val;
-
-        if (!disableRerender) {
-            currentComponent.rerender();
-        }
-    };
-
-    currentComponent.hookNode = nextNode(hookNode);
-
-    return [hookNode?.value, set];
-};
-
-const bulkSetState = (callback) => {
-    disableRerender = true;
-    callback();
-    disableRerender = false;
-
-    currentComponent.rerender();
-};
-
-const useRef = (initial) => {
-    let hookNode = currentComponent.hookNode;
-
-    if (typeof hookNode?.value === "undefined") {
-        hookNode.value = { current: initial };
-    }
-
-    currentComponent.hookNode = nextNode(hookNode);
-    return hookNode?.value;
-};
-/**
- *
- * @param {Function} effect
- * @param {String[]} deps
- * @returns
- */
-const useEffect = (effect, deps = null) => {
-    let hookNode = currentComponent.hookNode;
-
-    const hasNoDeps = !deps;
-
-    const oldHook = hookNode?.value;
-    const hasChangedDeps =
-        typeof oldHook !== "undefined"
-            ? oldHook?.recompute ||
-            !deps.every((dep, j) => Object.is(dep, oldHook.deps[j]))
-            : true;
-
-    if (hasNoDeps || hasChangedDeps) {
-        if (oldHook?.cleanup) {
-            //&& !oldHook?.recompute) {
-            queueMicrotask(() => {
-                oldHook.cleanup?.();
-            });
-        }
-
-        queueMicrotask(() => {
-            const cleanup = effect();
-            hookNode.value = { deps, cleanup, recompute: false };
-        });
-    } else {
-        hookNode.value = oldHook;
-    }
-
-    currentComponent.hookNode = nextNode(hookNode);
-};
-
-/**
- * Memoizes the result of a computation based on dependency changes.
- *
- * @template T
- * @param {() => T} compute - Function that returns the computed value.
- * @param {readonly any[]} deps - Dependency list used to determine recomputation.
- * @returns {T} Memoized value.
- */
-const useMemo = (compute, deps) => {
-    let hookNode = currentComponent.hookNode;
-
-    const prev = hookNode?.value;
-
-    const hasNoDeps = !deps;
-    const hasChanged = prev
-        ? !deps.every((d, j) => Object.is(d, prev.deps[j]))
-        : true;
-
-    if (hasNoDeps || hasChanged) {
-        const value = compute();
-        hookNode.value = { value, deps };
-        currentComponent.hookNode = hookNode.next = hookNode.next || {
-            next: null,
-        };
-        return value;
-    }
-
-    currentComponent.hookNode = nextNode(hookNode);
-    return prev.value;
-};
 
 function onReady(cb, delay = 1000) {
     if (document.readyState === "loading") {
@@ -320,123 +10,435 @@ function onReady(cb, delay = 1000) {
         setTimeout(cb, delay);
     }
 }
-/**
- * Just wrapper for establishing connection to the ws server
- * @param {Object} config
- * @param {Object} app
- */
-function hmr(config, app, enabled = false) {
-    if (enabled) {
-        const wsPort = config?.ws?.port || 4040,
-            wsHost = config?.ws?.host || location.hostname,
-            main = config?.main || "./src/app.js";
 
-        const socket = new WebSocket(`ws://${wsHost}:${wsPort}`);
-        socket.addEventListener("message", async ({ data }) => {
-            const msg = JSON.parse(data);
-            if (msg.type === "reload") {
+/**
+ * A single mounted application root: owns the hook chain for the top level
+ * component, the last rendered vdom tree, and re-render scheduling.
+ */
+class Root {
+    /**
+     * @param {Hooks} hooksRuntime
+     * @param {import("./vdom.js").VDOM} vdom
+     * @param {Element|Document|DocumentFragment|String} target
+     */
+    constructor(hooksRuntime, vdom, target) {
+        /** @type {Hooks} */
+        this.hooksRuntime = hooksRuntime;
+        /** @type {import("./vdom.js").VDOM} */
+        this.vdom = vdom;
+        this.hooks = { next: null };
+        this.hookNode = null;
+        /** last rendered vdom tree (kept separate from `this.vdom`, the engine) */
+        this.vdomTree = null;
+        this.target = vdom.getTarget(target);
+        /** @type {Function|null} */
+        this.renderFn = null;
+    }
+
+    /**
+     * @param {Function} app
+     * @returns {Root}
+     */
+    render(app) {
+        this.renderFn = app;
+        this.hooksRuntime.currentComponent = this;
+        this.hooksRuntime.handler = () => this.rerender();
+        this.rerender();
+        return this;
+    }
+
+    /**
+     * @param {Object} any
+     * @returns {Root}
+     */
+    use(any) {
+        if ("prepare" in any) {
+            any.prepare(this);
+        } else {
+            throw Error("Incompatible mod type.");
+        }
+        return this;
+    }
+
+    /** @param {Function} fn */
+    setRenderFn(fn) {
+        this.renderFn = fn;
+    }
+
+    rerender() {
+        requestAnimationFrame(() => {
+            const runtime = this.hooksRuntime;
+
+            if (typeof runtime.renderDebounce == "number") {
+                clearTimeout(runtime.renderDebounce);
+                runtime.renderDebounce = null;
+            }
+
+            runtime.renderDebounce = setTimeout(() => {
                 try {
-                    console.log(`[HMR]: ${msg.path}`);
-                    // window.setLoad(msg.path);
-                    const mod = await import(`${main}?t=` + msg.timestamp);
-                    if (mod.default) {
-                        app.setRenderFn(mod.default);
-                        app.rerender();
+                    runtime.resetContext();
+                    const newVNode = this.renderFn();
+                    if (!this.vdomTree) {
+                        this.vdomTree = this.vdom.render(newVNode, this.target);
+                    } else {
+                        this.vdomTree = this.vdom.update(
+                            this.target,
+                            this.vdomTree,
+                            newVNode,
+                        );
                     }
                 } catch (error) {
-                    console.log(error);
+                    this.target.innerHTML = `<pre>${error.stack}</pre>`;
+                    console.error(error);
                 }
-            }
+            }, 33);
+
+            onReady(() => this.vdom.executeJobs(), 300);
         });
     }
 }
 
 /**
- *
- * @param {Element|Document|DocumentFragment|String} root
- * @returns
+ * Hook runtime. Tracks the component currently being rendered and provides
+ * useState/useEffect/useRef/useMemo plus the hook-chain bookkeeping
+ * (allocate/orphan/overwrite) that the VDOM engine uses when reconciling
+ * components.
  */
-function createRoot(root) {
-    const comp = {
-        /**
-         * @param {Function} app
-         * @returns Object
-         */
-        render(app) {
-            comp.renderFn = app;
-            currentComponent = comp;
-            handler = comp.rerender;
-            comp.rerender();
-            return comp;
-        },
-        /**
-         *
-         * @param {Object} any
-         * @returns Object
-         */
-        use(any) {
-            if ("prepare" in any) {
-                any.prepare(this);
-            } else {
-                throw Error("Incompatible mod type.");
+class Hooks {
+    /**
+     * @param {import("./vdom.js").VDOM} vdom - engine instance exposing
+     *  getTarget/render/update/executeJobs
+     */
+    constructor(vdom) {
+        this.vdom = vdom;
+        /** @type {Root|null} */
+        this.currentComponent = null;
+        /** @type {Function|null} */
+        this.handler = null;
+        this.disableRerender = false;
+        this.renderDebounce = null;
+    }
+
+    nextNode(hookNode) {
+        return (hookNode.next = hookNode.next || { next: null });
+    }
+
+    resetContext() {
+        this.currentComponent.hookNode = this.currentComponent.hooks;
+    }
+
+    triggerRerender() {
+        if (this.handler) this.handler();
+    }
+
+    trailMaker(n = 1) {
+        let head = { next: null };
+        let node = head;
+        for (let i = 1; i <= n; i++) {
+            node = node.next = { next: null };
+        }
+        return [head, node];
+    }
+
+    /**
+     * Forgets the next n states in the hook chain
+     * @param {number} [n=1]
+     */
+    resets(n = 1) {
+        if (!this.currentComponent) return;
+
+        let hookNode = this.currentComponent.hookNode;
+        if (!hookNode) return;
+
+        for (let i = 1; i <= n && hookNode.next; i++) {
+            hookNode.value = undefined;
+            hookNode = hookNode.next;
+        }
+    }
+
+    allocate(n) {
+        let start = this.currentComponent.hookNode;
+        let actual = n - 1;
+
+        if (actual > -1) {
+            let [head, tail] = this.trailMaker(actual);
+            tail.next = start.next;
+            start.next = head;
+        }
+    }
+
+    /**
+     * @param {any[]} array
+     * @param {Boolean} recompute
+     */
+    overwrite(array, recompute = false) {
+        let start = this.currentComponent.hookNode;
+        array.map((e) => {
+            if (recompute && typeof e?.recompute !== "undefined") {
+                e.recompute = true;
             }
-            return comp;
+            start.value = e;
+            start = start.next;
+        });
+    }
+
+    orphan(n) {
+        let start = this.currentComponent.hookNode;
+        let end = start;
+
+        for (let i = 1; i <= n; i++) {
+            end = end.next = end.next;
+        }
+        start.next = undefined;
+        start.next = end?.next || null;
+    }
+
+    getData(until) {
+        if (!this.currentComponent) return;
+
+        const hookNode = this.currentComponent.hookNode;
+        if (!hookNode) return;
+        let n = 0;
+        let data = [];
+
+        let current = hookNode;
+        while (n < until && current) {
+            data.push(current?.value || undefined);
+            current = current?.next;
+            n++;
+        }
+
+        return data;
+    }
+
+    getCurrentHookNode() {
+        if (!this.currentComponent) return;
+        return this.currentComponent.hookNode;
+    }
+
+    /**
+     * @param {string|Function} stringFn
+     * @returns {number}
+     */
+    countHooks(stringFn) {
+        return (
+            stringFn.match(
+                /(?<!\/\/[^\n]*)(useEffect\(|useState\(|useRef\(|useMemo\()/gm,
+            ) || []
+        ).length;
+    }
+
+    /**
+     * Component factory with hook tracking and optional memoization.
+     *
+     * @param {Function} compFn
+     * @param {object} args
+     * @param {object|null} [options]
+     * @returns {import("../@types/vdom.js").VNodeComponent}
+     */
+    comp(
+        compFn,
+        args = {},
+        options = {
+            name: null,
+            hook: null,
+            remember: false,
+            recompute: false,
+            invalidAfter: undefined,
         },
-        hooks: { next: null },
-        hookNode: null,
-        vdom: null,
-        /**@type {Element} */
-        target: getTarget(root),
-        /** @type {Function} */
-        renderFn: null,
-        /** @param {Function} fn */
-        setRenderFn(fn) {
-            comp.renderFn = fn;
-        },
-        rerender() {
-            requestAnimationFrame(() => {
-                if (typeof renderDebounce == "number") {
-                    clearTimeout(renderDebounce);
-                    renderDebounce = null;
-                }
-                renderDebounce = setTimeout(() => {
+    ) {
+        let name,
+            counter = 0,
+            result = {
+                render: () => compFn(args),
+                isComp: true,
+                remember: value(options?.remember, false),
+                recompute: value(options?.recompute, false),
+                invalidAfter: value(options?.invalidAfter, 0),
+                stringified: null,
+                compHooks: null,
+            };
+
+        counter = valueComputed(options?.hook, () =>
+            this.countHooks(compFn.toString()),
+        );
+        name = valueComputed(
+            options?.name,
+            () => this.comp.toString() + JSON.stringify(options),
+        );
+
+        result.stringified = name;
+        result.compHooks = counter;
+
+        return result;
+    }
+
+    /**
+     * Destroys all remaining hook states from current position to end of chain
+     */
+    destroy() {
+        if (!this.currentComponent) return;
+
+        let hookNode = this.currentComponent.hookNode;
+        if (!hookNode) return;
+
+        while (hookNode.next) {
+            hookNode.value = undefined;
+            hookNode = hookNode.next;
+        }
+        this.currentComponent.hookNode = hookNode;
+    }
+
+    /**
+     * @template T
+     * @param {T} initial
+     * @param {Boolean} handleInputEvent
+     * @returns {[T, (val: T | ((prev: T) => T)) => void]}
+     */
+    useState(initial, handleInputEvent = false) {
+        let hookNode = this.currentComponent?.hookNode;
+
+        if (typeof hookNode?.value === "undefined") {
+            hookNode.value = initial;
+        }
+
+        const set = (val) => {
+            if (handleInputEvent && val instanceof InputEvent) {
+                val = val.target.value;
+            }
+            hookNode.value = typeof val == "function" ? val(hookNode?.value) : val;
+
+            if (!this.disableRerender) {
+                this.currentComponent.rerender();
+            }
+        };
+
+        this.currentComponent.hookNode = this.nextNode(hookNode);
+
+        return [hookNode?.value, set];
+    }
+
+    bulkSetState(callback) {
+        this.disableRerender = true;
+        callback();
+        this.disableRerender = false;
+
+        this.currentComponent.rerender();
+    }
+
+    useRef(initial) {
+        let hookNode = this.currentComponent.hookNode;
+
+        if (typeof hookNode?.value === "undefined") {
+            hookNode.value = { current: initial };
+        }
+
+        this.currentComponent.hookNode = this.nextNode(hookNode);
+        return hookNode?.value;
+    }
+
+    /**
+     * @param {Function} effect
+     * @param {any[]|null} deps
+     */
+    useEffect(effect, deps = null) {
+        let hookNode = this.currentComponent.hookNode;
+
+        const hasNoDeps = !deps;
+
+        const oldHook = hookNode?.value;
+        const hasChangedDeps =
+            typeof oldHook !== "undefined"
+                ? oldHook?.recompute ||
+                !deps.every((dep, j) => Object.is(dep, oldHook.deps[j]))
+                : true;
+
+        if (hasNoDeps || hasChangedDeps) {
+            if (oldHook?.cleanup) {
+                queueMicrotask(() => {
+                    oldHook.cleanup?.();
+                });
+            }
+
+            queueMicrotask(() => {
+                const cleanup = effect();
+                hookNode.value = { deps, cleanup, recompute: false };
+            });
+        } else {
+            hookNode.value = oldHook;
+        }
+
+        this.currentComponent.hookNode = this.nextNode(hookNode);
+    }
+
+    /**
+     * @template T
+     * @param {() => T} compute
+     * @param {readonly any[]} deps
+     * @returns {T}
+     */
+    useMemo(compute, deps) {
+        let hookNode = this.currentComponent.hookNode;
+
+        const prev = hookNode?.value;
+
+        const hasNoDeps = !deps;
+        const hasChanged = prev
+            ? !deps.every((d, j) => Object.is(d, prev.deps[j]))
+            : true;
+
+        if (hasNoDeps || hasChanged) {
+            const value = compute();
+            hookNode.value = { value, deps };
+            this.currentComponent.hookNode = hookNode.next = hookNode.next || {
+                next: null,
+            };
+            return value;
+        }
+
+        this.currentComponent.hookNode = this.nextNode(hookNode);
+        return prev.value;
+    }
+
+    /**
+     * @param {Element|Document|DocumentFragment|String} root
+     * @returns {Root}
+     */
+    createRoot(root) {
+        return new Root(this, this.vdom, root);
+    }
+
+    /**
+     * Wrapper for establishing connection to the ws server
+     * @param {Object} config
+     * @param {Root} app
+     * @param {boolean} enabled
+     */
+    hmr(config, app, enabled = false) {
+        if (enabled) {
+            const wsPort = config?.ws?.port || 4040,
+                wsHost = config?.ws?.host || location.hostname,
+                main = config?.main || "./src/app.js";
+
+            const socket = new WebSocket(`ws://${wsHost}:${wsPort}`);
+            socket.addEventListener("message", async ({ data }) => {
+                const msg = JSON.parse(data);
+                if (msg.type === "reload") {
                     try {
-                        resetContext();
-                        const newVNode = comp.renderFn();
-                        if (!comp.vdom) {
-                            comp.vdom = RenderVDOM.render(newVNode, comp.target);
-                        } else {
-                            comp.vdom = RenderVDOM.update(comp.target, comp.vdom, newVNode);
+                        console.log(`[HMR]: ${msg.path}`);
+                        const mod = await import(`${main}?t=` + msg.timestamp);
+                        if (mod.default) {
+                            app.setRenderFn(mod.default);
+                            app.rerender();
                         }
                     } catch (error) {
-                        comp.target.innerHTML = `<pre>${error.stack}</pre>`;
-                        console.error(error);
+                        console.log(error);
                     }
-                }, 33);
-
-                onReady(executeJobs, 300);
+                }
             });
-        },
-    };
-    return comp;
+        }
+    }
 }
 
-export {
-    resetContext,
-    useState,
-    useEffect,
-    useMemo,
-    useRef,
-    createRoot,
-    resets,
-    getCurrentHookNode,
-    destroy,
-    comp,
-    allocate,
-    orphan,
-    overwrite,
-    triggerRerender,
-    getData,
-    bulkSetState,
-    hmr,
-};
+export { Hooks, Root };
+export default Hooks;
