@@ -3,7 +3,7 @@
 
 "use strict";
 import { currentUri, trim, value } from "../helper/helper.js";
-import { comp, triggerRerender, createVNode, html, pushJob, registerVdom } from "../core/vdom.js";
+import { comp, triggerRerender, createVNode, html, pushJob, registerVdom } from "../index.js";
 import Memory from "../core/memory.js";
 
 /**
