@@ -3,8 +3,7 @@
 
 "use strict";
 import { currentUri, trim, value } from "../helper/helper.js";
-import { comp, triggerRerender } from "../core/vdom.hooks.js";
-import { createVNode, html, pushJob, registerVdom } from "../core/vdom.js";
+import { comp, triggerRerender, createVNode, html, pushJob, registerVdom } from "../index.js";
 import Memory from "../core/memory.js";
 
 /**
@@ -263,7 +262,7 @@ class Router {
     fallback(component, opt = {}) {
         let c;
         if (typeof component == 'function') {
-            c = comp(component, {}, { name: "defaultRoute",  ...opt})
+            c = comp(component, {}, { name: "defaultRoute", ...opt })
         } else {
             c = component;
         }
@@ -364,40 +363,6 @@ class Router {
             i++;
         }
         return a.slice(0, i);
-    }
-
-    /**
-     * Search for a route in the radix tree
-     * @param {string} path
-     * @param {RadixNode} node
-     * @param {Record<string, string>} params
-     * @returns {RouteComponent | null}
-     * @private
-     */
-    _searchPath(path, node, params = {}) {
-        if (path === "") {
-            return node.route;
-        }
-
-        for (let [childPath, childNode] of node.children) {
-            if (childNode.isParam) {
-                // Handle parameter nodes
-                const slashIndex = path.indexOf("/");
-                const paramValue = slashIndex === -1 ? path : path.slice(0, slashIndex);
-                const remainingPath =
-                    slashIndex === -1 ? "" : path.slice(slashIndex + 1);
-
-                params[childNode.paramKeys[0]] = decodeURIComponent(paramValue);
-                const result = this._searchPath(remainingPath, childNode, params);
-                if (result) return result;
-            } else if (path.startsWith(childPath)) {
-                const remainingPath = path.slice(childPath.length);
-                const result = this._searchPath(remainingPath, childNode, params);
-                if (result) return result;
-            }
-        }
-
-        return null;
     }
 
     /**
@@ -518,7 +483,7 @@ class Router {
             }
 
             // Try parameter match
-            for (let [childPath, childNode] of node.children) {
+            for (let [_, childNode] of node.children) {
                 if (childNode.isParam && childNode.paramKeys[0]) {
                     const newParams = { ...currentParams };
                     newParams[childNode.paramKeys[0]] = decodeURIComponent(segment);

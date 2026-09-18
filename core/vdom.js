@@ -1,958 +1,931 @@
 /// <reference path="../@types/vdom.js" />
 "use strict";
-import {
-    allocate,
-    orphan,
-    overwrite,
-    getCurrentHookNode,
-} from "./vdom.hooks.js";
+import { Hooks } from "./vdom.hooks.js";
 import Memory from "./memory.js";
 
-let jobs = [];
-const memory = new Memory();
 const memoryPrefix = "ComponentState_";
-const _keys = {};
-const getKey = (vnode) => vnode?.props?.key ?? null;
-const hasKey = (vnode) => vnode && typeof vnode.props?.key !== "undefined";
-const setKey = (key, vnode) => (_keys[key] = vnode.el);
 
 /**
- * @param {any} v
- * @returns {v is VNode}
+ * The VDOM rendering engine: virtual node creation, diffing/patching,
+ * component (hook) reconciliation and the `html` DSL proxy all live here.
  */
-function isVNode(v) {
-    return (
-        typeof v == "object" &&
-        v?.isComp === false &&
-        typeof v?.props == "object" &&
-        typeof v?.tag == "string"
-    );
-}
+class VDOM {
+    /**
+     * @param {Memory} memory
+     * @param {Hooks|null} [hooks] - optionally inject an already-built hook
+     *  runtime; otherwise call `setHooks` before rendering any component.
+     */
+    constructor(memory, hooks = null) {
+        this.jobs = [];
+        this.memory = memory;
+        this.memoryPrefix = memoryPrefix;
+        this._keys = {};
+        this.customVDom = {};
+        /** @type {Hooks|null} */
+        this.hooks = hooks;
 
-/**
- * @param {any} v
- * @returns {v is VNodeComponent}
- */
-function isVNodeComponent(v) {
-    return (
-        typeof v == "object" &&
-        v?.isComp === true &&
-        typeof v?.compHooks == "number" &&
-        typeof v?.stringified == "string" &&
-        typeof v?.remember == "boolean" &&
-        typeof v?.recompute == "boolean" &&
-        typeof v?.invalidAfter == "number" &&
-        typeof v?.render == "function"
-    );
-}
 
-/**
- *
- * @param {Function} fn
- */
-function pushJob(fn) {
-    jobs.push(fn);
-}
+        /**
+         * DSL-VDOM factory proxy.
+         *
+         * Provides:
+         * - Dynamic HTML tag functions (e.g. `html.div(...)`)
+         * - DOM mount helpers
+         * - Shadow DOM mounting
+         * - Fragment creation
+         * - VDOM rendering passthrough
+         *
+         * @type {HTMLProxy}
+         *
+         * @example
+         * html.div({ class: "box" }, "Hello")
+         * html.mount(node, "#app")
+         * html.$(child1, child2)
+         */
+        this.html = this._createHtmlProxy();
 
-function executeJobs() {
-    for (const job of jobs) job();
-    jobs.length = 0;
-}
+        /** Legacy-shaped facade kept for drop-in compatibility. */
+        this.RenderVDOM = {
+            createVNode: this.createVNode.bind(this),
+            render: this.render.bind(this),
+            update: this.update.bind(this),
+        };
+    }
 
-function filterFalsy(c) {
-    return c !== false && c !== null && c !== undefined;
-}
+    /** @param {Hooks} hooks */
+    setHooks(hooks) {
+        this.hooks = hooks;
+    }
 
-/**
- *
- * @param {Array} children
- * @returns
- */
-const flattenChildren = (children) => children.flat(10).filter(filterFalsy);
+    // ---- static predicates -------------------------------------------------
 
-/**
- * @param {string} tag
- * @param {object} props
- * @param  {VNodeChild[] | VNodeChild[][]} children
- * @returns {VNode}
- */
-const createVNode = (tag, props = {}, ...children) => {
-    let flatten = flattenChildren(children);
-    let keyed = false;
+    /**
+     * @param {any} v
+     * @returns {v is VNode}
+     */
+    static isVNode(v) {
+        return (
+            typeof v == "object" &&
+            v?.isComp === false &&
+            typeof v?.props == "object" &&
+            typeof v?.tag == "string"
+        );
+    }
 
-    for (let i = 0; i < flatten.length; i++) {
-        if (flatten[i]?.props?.key !== undefined) {
-            keyed = true;
-            break;
+    /**
+     * @param {any} v
+     * @returns {v is VNodeComponent}
+     */
+    static isVNodeComponent(v) {
+        return (
+            typeof v == "object" &&
+            v?.isComp === true &&
+            typeof v?.compHooks == "number" &&
+            typeof v?.stringified == "string" &&
+            typeof v?.remember == "boolean" &&
+            typeof v?.recompute == "boolean" &&
+            typeof v?.invalidAfter == "number" &&
+            typeof v?.render == "function"
+        );
+    }
+
+    // ---- vnode utilities -----------------------------------------------------
+
+    getKey(vnode) {
+        return vnode?.props?.key ?? null;
+    }
+
+    hasKey(vnode) {
+        return vnode && typeof vnode.props?.key !== "undefined";
+    }
+
+    setKey(key, vnode) {
+        this._keys[key] = vnode.el;
+    }
+
+    /** @param {Function} fn */
+    pushJob(fn) {
+        this.jobs.push(fn);
+    }
+
+    executeJobs() {
+        for (const job of this.jobs) job();
+        this.jobs.length = 0;
+    }
+
+    filterFalsy(c) {
+        return c !== false && c !== null && c !== undefined;
+    }
+
+    /**
+     * @param {Array} children
+     * @returns {Array}
+     */
+    flattenChildren(children) {
+        return children.flat(10).filter(this.filterFalsy);
+    }
+
+    /**
+     * @param {string} tag
+     * @param {object} props
+     * @param  {VNodeChild[] | VNodeChild[][]} children
+     * @returns {VNode}
+     */
+    createVNode(tag, props = {}, ...children) {
+        let flatten = this.flattenChildren(children);
+        let keyed = false;
+
+        for (let i = 0; i < flatten.length; i++) {
+            if (flatten[i]?.props?.key !== undefined) {
+                keyed = true;
+                break;
+            }
         }
-    }
 
-    if (keyed) {
-        props.keyed = true;
-    }
+        if (keyed) {
+            props.keyed = true;
+        }
 
-    return {
-        tag,
-        stringifiedProps: JSON.stringify(props),
-        props,
-        children: flatten.map(wrapPrimitive),
-        isComp: false,
-    };
-};
-
-function wrapPrimitive(node) {
-    if (typeof node == "function") {
-        node = node();
-    }
-    if (["string", "number"].includes(typeof node)) {
-        const text = String(node);
         return {
-            tag: "#text",
-            text: text,
-            children: [text],
-            props: {},
-            el: document.createTextNode(text),
+            tag,
+            stringifiedProps: JSON.stringify(props),
+            props,
+            children: flatten.map((n) => this.wrapPrimitive(n)),
             isComp: false,
         };
     }
-    return node;
-}
 
-// Helper function to handle ref updates
-const updateRef = (ref, value) => {
-    if (!ref) return;
-
-    try {
-        if (typeof ref === "function") {
-            ref(value);
-        } else if (ref && typeof ref === "object" && "current" in ref) {
-            ref.current = value;
+    wrapPrimitive(node) {
+        if (typeof node == "function") {
+            node = node();
         }
-    } catch (e) {
-        console.error("Error updating ref:", e);
-    }
-};
-
-function cleanupVNode(node) {
-    if (!node || typeof node !== "object") return;
-
-    const el = node.el;
-
-    // Clean up event listeners
-    if (el && node.props) {
-        for (const key in node.props) {
-            const value = node.props[key];
-            if (key.startsWith("on") && typeof value === "function") {
-                const event = key.slice(2).toLowerCase();
-                el.removeEventListener(event, value);
-            }
+        if (["string", "number"].includes(typeof node)) {
+            const text = String(node);
+            return {
+                tag: "#text",
+                text: text,
+                children: [text],
+                props: {},
+                el: document.createTextNode(text),
+                isComp: false,
+            };
         }
+        return node;
     }
 
-    // Clean up custom cleanup hooks
-    if (typeof node.props?.useCleanup === "function") {
+    // Helper to handle ref updates
+    updateRef(ref, value) {
+        if (!ref) return;
+
         try {
-            node.props.useCleanup(node.el);
-        } catch (e) { }
-    }
-
-    const ref = node.props?.ref;
-    if (ref && el?.isConnected === false) {
-        updateRef(ref, null);
-    }
-
-    // Recursively clean up children
-    if (Array.isArray(node.children)) {
-        for (const child of node.children) cleanupVNode(child);
-    }
-
-    node.children = null;
-    node.props = null;
-}
-
-const updateProps = (el, oldProps, newProps) => {
-    const allProps = { ...oldProps, ...newProps };
-
-    for (const key in allProps) {
-        const oldValue = oldProps[key];
-        const newValue = newProps[key];
-        if (key === "keyed") continue;
-
-        if (
-            key === "useCleanup" &&
-            (typeof oldValue === "function" || typeof newValue == "function")
-        ) {
-            continue;
+            if (typeof ref === "function") {
+                ref(value);
+            } else if (ref && typeof ref === "object" && "current" in ref) {
+                ref.current = value;
+            }
+        } catch (e) {
+            console.error("Error updating ref:", e);
         }
+    }
 
-        if (key === "ref") {
-            // Only update ref if it actually changed
-            if (oldValue !== newValue) {
-                // Remove old ref
-                if (oldValue) {
-                    updateRef(oldValue, null);
-                }
-                // Set new ref
-                if (newValue && el) {
-                    updateRef(newValue, el);
+    cleanupVNode(node) {
+        if (!node || typeof node !== "object") return;
+
+        const el = node.el;
+
+        // Clean up event listeners
+        if (el && node.props) {
+            for (const key in node.props) {
+                const value = node.props[key];
+                if (key.startsWith("on") && typeof value === "function") {
+                    const event = key.slice(2).toLowerCase();
+                    el.removeEventListener(event, value);
                 }
             }
-            continue;
         }
 
-        if (newValue === undefined) {
-            if (key === "class") {
-                el.removeAttribute("class");
-            } else if (key === "style") {
-                el.style.cssText = "";
-            } else if (key.startsWith("on") && typeof oldValue === "function") {
-                el.removeEventListener(key.slice(2).toLowerCase(), oldValue);
-            } else {
-                el.removeAttribute(key);
+        // Clean up custom cleanup hooks
+        if (typeof node.props?.useCleanup === "function") {
+            try {
+                node.props.useCleanup(node.el);
+            } catch (e) { }
+        }
+
+        const ref = node.props?.ref;
+        if (ref && el?.isConnected === false) {
+            this.updateRef(ref, null);
+        }
+
+        // Recursively clean up children
+        if (Array.isArray(node.children)) {
+            for (const child of node.children) this.cleanupVNode(child);
+        }
+
+        node.children = null;
+        node.props = null;
+    }
+
+    updateProps(el, oldProps, newProps) {
+        const allProps = { ...oldProps, ...newProps };
+
+        for (const key in allProps) {
+            const oldValue = oldProps[key];
+            const newValue = newProps[key];
+            if (key === "keyed") continue;
+
+            if (
+                key === "useCleanup" &&
+                (typeof oldValue === "function" || typeof newValue == "function")
+            ) {
+                continue;
             }
-        } else if (oldValue !== newValue) {
-            if (key === "class") {
-                el.setAttribute(
-                    "class",
-                    Array.isArray(newValue)
-                        ? newValue.filter(Boolean).join(" ")
-                        : newValue,
-                );
-            } else if (key === "style") {
-                if (typeof newValue === "string") {
-                    el.style.cssText = newValue;
-                } else {
+
+            if (key === "ref") {
+                if (oldValue !== newValue) {
+                    if (oldValue) {
+                        this.updateRef(oldValue, null);
+                    }
+                    if (newValue && el) {
+                        this.updateRef(newValue, el);
+                    }
+                }
+                continue;
+            }
+
+            if (newValue === undefined) {
+                if (key === "class") {
+                    el.removeAttribute("class");
+                } else if (key === "style") {
                     el.style.cssText = "";
-                    Object.assign(el.style, newValue);
-                }
-            } else if (key.startsWith("on") && typeof newValue === "function") {
-                if (oldValue)
+                } else if (key.startsWith("on") && typeof oldValue === "function") {
                     el.removeEventListener(key.slice(2).toLowerCase(), oldValue);
-                el.addEventListener(key.slice(2).toLowerCase(), newValue);
-            } else {
-                el.setAttribute(key, newValue);
-            }
-        }
-    }
-    return newProps;
-};
-
-const renderVNode = (vnode, parentIsSvg = false) => {
-    let work;
-    if (vnode.isComp) {
-        work = vnode.vdom = vnode.render();
-    } else {
-        work = vnode;
-    }
-
-    if (work.tag == "#text") {
-        return work.el;
-    }
-
-    let isSvg = work.tag == "svg" || parentIsSvg;
-
-    if (work.tag === "#fragment") {
-        const start = document.createComment("fragment-start");
-        const end = document.createComment("fragment-end");
-        const frag = document.createDocumentFragment();
-
-        work.el = start;
-        work._end = end;
-
-        frag.appendChild(start);
-        for (let child of work.children || []) {
-            const el = renderVNode(child);
-            if (el) frag.appendChild(el);
-        }
-        frag.appendChild(end);
-
-        return frag;
-    }
-
-    const el = isSvg
-        ? document.createElementNS("http://www.w3.org/2000/svg", work.tag)
-        : document.createElement(work.tag);
-
-    const ref = work.props?.ref;
-    if (ref && el) {
-        updateRef(ref, el);
-    }
-
-    if(work?.props){
-        for (const [key, value] of Object.entries(work.props)) {
-            if (key === "useCleanup" && typeof value === "function") continue;
-            if (key === "ref" || key === "keyed") continue; // Already handled
-            if (key === "key") setKey(value, work);
-
-            if (key === "class") {
-                if (isSvg) {
+                } else {
+                    el.removeAttribute(key);
+                }
+            } else if (oldValue !== newValue) {
+                if (key === "class") {
                     el.setAttribute(
                         "class",
-                        Array.isArray(value) ? value.filter(Boolean).join(" ") : value,
+                        Array.isArray(newValue)
+                            ? newValue.filter(Boolean).join(" ")
+                            : newValue,
                     );
+                } else if (key === "style") {
+                    if (typeof newValue === "string") {
+                        el.style.cssText = newValue;
+                    } else {
+                        el.style.cssText = "";
+                        Object.assign(el.style, newValue);
+                    }
+                } else if (key.startsWith("on") && typeof newValue === "function") {
+                    if (oldValue)
+                        el.removeEventListener(key.slice(2).toLowerCase(), oldValue);
+                    el.addEventListener(key.slice(2).toLowerCase(), newValue);
                 } else {
-                    el.className = Array.isArray(value)
-                        ? value.filter(Boolean).join(" ")
-                        : value;
+                    el.setAttribute(key, newValue);
                 }
-            } else if (key === "style") {
-                if (typeof value === "string") {
-                    el.style.cssText = value;
-                } else {
-                    Object.assign(el.style, value);
-                }
-            } else if (key.startsWith("on") && typeof value === "function") {
-                el.addEventListener(key.slice(2).toLowerCase(), value);
-            } else {
-                el.setAttribute(key, value);
             }
         }
+        return newProps;
+    }
 
-        if (work.props?.shadow) {
-            const shadow = el.attachShadow({
-                mode: work.props.shadow === true ? "open" : work.props.shadow,
-            });
-            el._shadow = shadow;
+    renderVNode(vnode, parentIsSvg = false) {
+        let work;
+        if (vnode.isComp) {
+            work = vnode.vdom = vnode.render();
+        } else {
+            work = vnode;
         }
-    }
 
-    const children = Array.isArray(work.children)
-        ? work.children
-        : [work.children];
+        if (work.tag == "#text") {
+            return work.el;
+        }
 
-    for (let child of children) {
-        if (child === null || child === undefined) continue;
-        el.appendChild(renderVNode(child, isSvg));
-    }
+        let isSvg = work.tag == "svg" || parentIsSvg;
 
-    work.el = el;
-    return el;
-};
+        if (work.tag === "#fragment") {
+            const start = document.createComment("fragment-start");
+            const end = document.createComment("fragment-end");
+            const frag = document.createDocumentFragment();
 
-const patchChildrenWithKeys = (parent, oldChildren, newChildren) => {
-    const oldKeyMap = new Map();
-    oldChildren.forEach((vnode) => oldKeyMap.set(vnode.props.key, vnode));
+            work.el = start;
+            work._end = end;
 
-    const newKeySet = new Set();
-    const updatedChildren = [];
+            frag.appendChild(start);
+            for (let child of work.children || []) {
+                const el = this.renderVNode(child);
+                if (el) frag.appendChild(el);
+            }
+            frag.appendChild(end);
 
-    newChildren.forEach((newVNode, i) => {
-        const key = newVNode.props.key;
-        newKeySet.add(key);
+            return frag;
+        }
 
-        const oldVNode = oldKeyMap.get(key);
-        if (oldVNode) {
-            if (oldVNode.stringifiedProps != newVNode.stringifiedProps) {
-                requestAnimationFrame(() => {
-                    updateProps(oldVNode.el, oldVNode.props, newVNode.props);
+        const el = isSvg
+            ? document.createElementNS("http://www.w3.org/2000/svg", work.tag)
+            : document.createElement(work.tag);
+
+        const ref = work.props?.ref;
+        if (ref && el) {
+            this.updateRef(ref, el);
+        }
+
+        if (work?.props) {
+            for (const [key, value] of Object.entries(work.props)) {
+                if (key === "useCleanup" && typeof value === "function") continue;
+                if (key === "ref" || key === "keyed") continue; // Already handled
+                if (key === "key") this.setKey(value, work);
+
+                if (key === "class") {
+                    if (isSvg) {
+                        el.setAttribute(
+                            "class",
+                            Array.isArray(value) ? value.filter(Boolean).join(" ") : value,
+                        );
+                    } else {
+                        el.className = Array.isArray(value)
+                            ? value.filter(Boolean).join(" ")
+                            : value;
+                    }
+                } else if (key === "style") {
+                    if (typeof value === "string") {
+                        el.style.cssText = value;
+                    } else {
+                        Object.assign(el.style, value);
+                    }
+                } else if (key.startsWith("on") && typeof value === "function") {
+                    el.addEventListener(key.slice(2).toLowerCase(), value);
+                } else {
+                    el.setAttribute(key, value);
+                }
+            }
+
+            if (work.props?.shadow) {
+                const shadow = el.attachShadow({
+                    mode: work.props.shadow === true ? "open" : work.props.shadow,
                 });
+                el._shadow = shadow;
             }
-
-            const oldChildren = oldVNode.children || [];
-            const newChildren = newVNode.children || [];
-            const max = Math.max(oldChildren.length, newChildren.length);
-
-            for (let i = 0; i < max; i++) {
-                patch(oldVNode.el, oldChildren[i], newChildren[i]);
-            }
-
-            newVNode.el = oldVNode.el;
-
-            updatedChildren.push(newVNode);
-        } else {
-            const el = renderVNode(newVNode);
-            newVNode.el = el;
-            parent.insertBefore(el, parent.children[i] || null);
-            updatedChildren.push(newVNode);
         }
-    });
 
-    oldChildren.forEach((oldVNode) => {
-        if (!newKeySet.has(oldVNode.props.key)) {
-            cleanupVNode(oldVNode);
-            parent.removeChild(oldVNode.el);
+        const children = Array.isArray(work.children)
+            ? work.children
+            : [work.children];
+
+        for (let child of children) {
+            if (child === null || child === undefined) continue;
+            el.appendChild(this.renderVNode(child, isSvg));
         }
-    });
 
-    updatedChildren.forEach((vnode, i) => {
-        const current = parent.children[i];
-        if (vnode.el !== current) {
-            parent.insertBefore(vnode.el, current);
-        }
-    });
-
-    return updatedChildren;
-};
-
-/**
- * Handle component's state management
- *
- * @param {VNodeComponent} old
- * @param {VNodeComponent} replacement
- */
-const handleComponentState = (old, replacement) => {
-    let oldHookCount = old.compHooks,
-        replacementHookCount = replacement.compHooks;
-
-    if (oldHookCount === 0 && replacementHookCount > 0) {
-        return handleComponentApplyState(replacement);
-    } else if (replacementHookCount === 0 && oldHookCount > 0) {
-        return handleComponentRetrieval(old);
-    } else if (replacementHookCount === 0 && oldHookCount === 0){
-        return;
+        work.el = el;
+        return el;
     }
 
-    let current = getCurrentHookNode();
-    let store = new Array(oldHookCount);
-    let storedMemory = [];
-    let prev = null;
-    if (
-        replacement.remember &&
-        memory.remembered(memoryPrefix + replacement.stringified)
-    ) {
-        storedMemory = memory.recall(memoryPrefix + replacement.stringified);
-    }
+    patchChildrenWithKeys(parent, oldChildren, newChildren) {
+        const oldKeyMap = new Map();
+        oldChildren.forEach((vnode) => oldKeyMap.set(vnode.props.key, vnode));
 
-    for (let i = 0; i < Math.max(oldHookCount, replacementHookCount); i++) {
-        if (i > oldHookCount) {
-            let newNode = { value: undefined, next: current?.next };
-            if (!current) {
-                prev.next = current = newNode
+        const newKeySet = new Set();
+        const updatedChildren = [];
+
+        newChildren.forEach((newVNode, i) => {
+            const key = newVNode.props.key;
+            newKeySet.add(key);
+
+            const oldVNode = oldKeyMap.get(key);
+            if (oldVNode) {
+                if (oldVNode.stringifiedProps != newVNode.stringifiedProps) {
+                    requestAnimationFrame(() => {
+                        this.updateProps(oldVNode.el, oldVNode.props, newVNode.props);
+                    });
+                }
+
+                const oldChildren = oldVNode.children || [];
+                const newChildren = newVNode.children || [];
+                const max = Math.max(oldChildren.length, newChildren.length);
+
+                for (let i = 0; i < max; i++) {
+                    this.patch(oldVNode.el, oldChildren[i], newChildren[i]);
+                }
+
+                newVNode.el = oldVNode.el;
+
+                updatedChildren.push(newVNode);
             } else {
-                current.next = newNode;
-                prev = current;
-                current = newNode;
+                const el = this.renderVNode(newVNode);
+                newVNode.el = el;
+                parent.insertBefore(el, parent.children[i] || null);
+                updatedChildren.push(newVNode);
             }
-        } else {
-            if (old.remember) {
-                store[i] = current.value;
+        });
+
+        oldChildren.forEach((oldVNode) => {
+            if (!newKeySet.has(oldVNode.props.key)) {
+                this.cleanupVNode(oldVNode);
+                parent.removeChild(oldVNode.el);
             }
-        }
+        });
 
-        if (current.value?.cleanup) {
-            try {
-                current.value.cleanup();
-            } catch (error) { }
-        }
-
-        current.value = undefined;
-
-        if (replacement.remember) {
-            current.value = storedMemory[i];
-            // if (storedMemory[i] == 'data') Object.freeze(current), console.log(current);
-            if (
-                replacement.recompute &&
-                typeof current.value?.recompute !== "undefined"
-            ) {
-                current.value.recompute = true;
+        updatedChildren.forEach((vnode, i) => {
+            const current = parent.children[i];
+            if (vnode.el !== current) {
+                parent.insertBefore(vnode.el, current);
             }
-        }
+        });
 
-        prev = current
-        current = current.next;
+        return updatedChildren;
     }
 
-    if (oldHookCount > replacementHookCount) {
-        orphan(old.compHooks - replacement.compHooks);
-    }
+    /**
+     * Handle component's state management
+     * @param {VNodeComponent} old
+     * @param {VNodeComponent} replacement
+     */
+    handleComponentState(old, replacement) {
+        let oldHookCount = old.compHooks,
+            replacementHookCount = replacement.compHooks;
 
-    if (old.remember) {
-        memory.memorize(memoryPrefix + old.stringified, store, old.invalidAfter);
-    }
-};
-
-/**
- * Handle component's state retrieval
- *
- * @param {VNodeComponent} component
- */
-const handleComponentRetrieval = (component) => {
-    let data = new Array(component.compHooks);
-    let current = getCurrentHookNode();
-
-    for (let i = 0; i < component.compHooks; i++) {
-        if (component.remember) {
-            data[i] = current.value;
-        }
-        if (current.value?.cleanup) {
-            try {
-                current.value.cleanup();
-            } catch (error) { }
-        }
-        current.value = undefined;
-        current = current.next;
-    }
-
-    orphan(component.compHooks - 1);
-
-    if (component.remember) {
-        memory.memorize(
-            memoryPrefix + component.stringified,
-            data,
-            component.invalidAfter,
-        );
-    }
-};
-
-/**
- * Handle component's state application
- *
- * @param {VNodeComponent} component
- */
-const handleComponentApplyState = (component) => {
-    allocate(component.compHooks - 1);
-    if (
-        component.remember &&
-        memory.remembered(memoryPrefix + component.stringified)
-    ) {
-        overwrite(
-            memory.recall(memoryPrefix + component.stringified),
-            component.recompute,
-        );
-    }
-};
-
-/**
- *
- * @param {Element} parent
- * @param {VNode | VNodeComponent | undefined } old
- * @param {VNode | VNodeComponent | undefined } newOne
- * @returns {VNode | VNodeComponent | null}
- */
-const handleComponent = (parent, old, newOne) => {
-    if (isVNodeComponent(old) && isVNodeComponent(newOne)) {
-        // console.log(old, newOne)
-        if (old.stringified !== newOne.stringified) {
-            handleComponentState(old, newOne);
-        }
-
-        newOne.vdom = patch(parent, old.vdom, newOne.render(), true);
-        return newOne;
-    } else if (isVNodeComponent(old) && !isVNodeComponent(newOne)) {
-        handleComponentRetrieval(old);
-
-        return patch(parent, old.vdom, newOne, true);
-    } else if (!isVNodeComponent(old) && isVNodeComponent(newOne)) {
-        handleComponentApplyState(newOne);
-
-        newOne.vdom = patch(parent, old, newOne.render(), true);
-        return newOne;
-    } else {
-        console.error("Impossible", old, newOne);
-        return null;
-    }
-};
-
-/**
- *
- * @param {Element} parent
- * @param {VNode | VNodeComponent | null | undefined} oldNode
- * @param {VNode | VNodeComponent | null | undefined} newNode
- * @param {boolean} skip
- * @returns {VNode | null}
- */
-const patch = (parent, oldNode, newNode, skip = false, type = -1) => {
-    if (oldNode == null && newNode == null) return null;
-
-    if (!skip && (isVNodeComponent(oldNode) || isVNodeComponent(newNode))) {
-        return handleComponent(parent, oldNode, newNode);
-    }
-
-    if (newNode == null || newNode == undefined) {
-        if (oldNode?.tag == "#fragment") {
-            let node = oldNode.el;
-            const end = oldNode._end;
-
-            if (end == undefined) {
-                return null;
-            }
-            while (node && node !== end) {
-                const next = node.nextSibling;
-                parent.removeChild(node);
-                // console.log(node);
-                node = next;
-            }
-
-            return null;
-        }
-        cleanupVNode(oldNode);
-        if (type > -1) parent[0].removeChild(oldNode.el);
-        else parent.removeChild(oldNode.el);
-        return null;
-    }
-
-    if (newNode.tag === "#text") {
-        if (oldNode?.tag === "#text") {
-            const oldText = oldNode.children?.[0];
-            const newText = newNode.children?.[0];
-
-            if (oldText !== newText && oldNode.el) {
-                oldNode.el.nodeValue = newText;
-            }
-            newNode.el = oldNode?.el;
-            return newNode;
-        }
-
-        if (oldNode?.tag == "#fragment") {
-            let node = oldNode.el;
-            const end = oldNode._end;
-
-            if (end == undefined) {
-                return null;
-            }
-
-            while (node && node !== end) {
-                const next = node.nextSibling;
-                parent.removeChild(node);
-                node = next;
-            }
-
-            const newEl = renderVNode(newNode);
-            parent.replaceChild(newEl, oldNode._end);
-            newNode.el = newEl;
-
-            return newNode;
-        }
-
-        const newEl = renderVNode(newNode);
-        if (oldNode?.el) {
-            parent.replaceChild(newEl, oldNode.el);
-        } else {
-            parent.appendChild(newEl);
-        }
-
-        newNode.el = newEl;
-        return newNode;
-    }
-
-    if (oldNode == null) {
-        if (newNode.tag === "#fragment") {
-            const frag = renderVNode(newNode);
-            parent.appendChild(frag);
-            return newNode;
-        }
-
-        const el = renderVNode(newNode);
-        if (type == 0) parent[1].after(el);
-        else if (type > 0) parent[2].after(el);
-        else parent.appendChild(el);
-        newNode.el = el;
-        return newNode;
-    }
-
-    if (oldNode.tag === "#fragment" && newNode.tag !== "#fragment") {
-        let node = oldNode.el;
-        const end = oldNode._end;
-
-        if (end == undefined) {
+        if (oldHookCount === 0 && replacementHookCount > 0) {
+            return this.handleComponentApplyState(replacement);
+        } else if (replacementHookCount === 0 && oldHookCount > 0) {
+            return this.handleComponentRetrieval(old);
+        } else if (replacementHookCount === 0 && oldHookCount === 0) {
             return;
         }
 
-        while (node && node !== end) {
-            const next = node.nextSibling;
-            if (type > -1) parent[0].removeChild(node);
-            else parent.removeChild(node);
-            node = next;
+        let current = this.hooks.getCurrentHookNode();
+        let store = new Array(oldHookCount);
+        let storedMemory = [];
+        let prev = null;
+        if (
+            replacement.remember &&
+            this.memory.remembered(this.memoryPrefix + replacement.stringified)
+        ) {
+            storedMemory = this.memory.recall(
+                this.memoryPrefix + replacement.stringified,
+            );
         }
 
-        const newEl = renderVNode(newNode);
-        if (type > -1) parent[0].removeChild(node);
-        else parent.replaceChild(newEl, oldNode._end);
+        for (let i = 0; i < Math.max(oldHookCount, replacementHookCount); i++) {
+            if (i > oldHookCount) {
+                let newNode = { value: undefined, next: current?.next };
+                if (!current) {
+                    prev.next = current = newNode;
+                } else {
+                    current.next = newNode;
+                    prev = current;
+                    current = newNode;
+                }
+            } else {
+                if (old.remember) {
+                    store[i] = current.value;
+                }
+            }
 
-        return newNode;
-    }
+            if (current.value?.cleanup) {
+                try {
+                    current.value.cleanup();
+                } catch (error) { }
+            }
 
-    if (oldNode.tag == "#fragment" && newNode.tag == "#fragment") {
-        patchFragmentChild(parent, oldNode, newNode);
-        newNode.el = oldNode.el;
-        newNode._end = oldNode._end;
-        return newNode;
-    }
+            current.value = undefined;
 
-    if (oldNode.tag !== newNode.tag) {
-        cleanupVNode(oldNode);
+            if (replacement.remember) {
+                current.value = storedMemory[i];
+                if (
+                    replacement.recompute &&
+                    typeof current.value?.recompute !== "undefined"
+                ) {
+                    current.value.recompute = true;
+                }
+            }
 
-        if (newNode.tag === "#fragment") {
-            const frag = renderVNode(newNode);
-            if (type > -1) parent[0].replaceChild(frag, oldNode.el);
-            else parent.replaceChild(frag, oldNode.el);
-            return newNode;
+            prev = current;
+            current = current.next;
         }
 
-        const el = renderVNode(newNode);
-        if (type > -1) parent[0].replaceChild(el, oldNode.el);
-        else parent.replaceChild(el, oldNode.el);
-        newNode.el = el;
-        return newNode;
-    }
+        if (oldHookCount > replacementHookCount) {
+            this.hooks.orphan(old.compHooks - replacement.compHooks);
+        }
 
-    if (newNode.tag === "svg") {
-        cleanupVNode(oldNode);
-
-        const el = renderVNode(newNode, true);
-        parent.replaceChild(el, oldNode.el);
-        newNode.el = el;
-        return newNode;
-    }
-
-    if (oldNode.stringifiedProps !== newNode.stringifiedProps) {
-        requestAnimationFrame(() => {
-            updateProps(oldNode.el, oldNode.props || {}, newNode.props || {});
-        });
-    }
-
-    if (newNode.tag === "input" && oldNode.el?.value !== newNode.props?.value) {
-        oldNode.el.value = newNode.props.value;
-    }
-
-    const oldChildren = oldNode.children || [];
-    const newChildren = newNode.children || [];
-    if (oldNode.props?.keyed && newNode.props?.keyed) {
-        patchChildrenWithKeys(oldNode.el, oldChildren, newChildren);
-    } else {
-        const max = Math.max(oldChildren.length, newChildren.length);
-        for (let i = 0; i < max; i++) {
-            patch(
-                oldNode?.tag === "#fragment" ? parent : oldNode.el,
-                oldChildren[i],
-                newChildren[i],
+        if (old.remember) {
+            this.memory.memorize(
+                this.memoryPrefix + old.stringified,
+                store,
+                old.invalidAfter,
             );
         }
     }
 
-    if (newNode.tag === "#fragment") {
-        newNode._end = oldNode._end;
-    }
-    newNode.el = oldNode.el;
-    return newNode;
-};
+    /**
+     * Handle component's state retrieval
+     * @param {VNodeComponent} component
+     */
+    handleComponentRetrieval(component) {
+        let data = new Array(component.compHooks);
+        let current = this.hooks.getCurrentHookNode();
 
-const patchFragmentChild = (parent, oldFragment, newFragment) => {
-    const start = oldFragment.el;
-    const end = oldFragment._end;
-    let current = parent;
+        for (let i = 0; i < component.compHooks; i++) {
+            if (component.remember) {
+                data[i] = current.value;
+            }
+            if (current.value?.cleanup) {
+                try {
+                    current.value.cleanup();
+                } catch (error) { }
+            }
+            current.value = undefined;
+            current = current.next;
+        }
 
-    const max = Math.max(
-        oldFragment.children.length,
-        newFragment.children.length,
-    );
-    for (let i = 0; i < max; i++) {
-        patch(
-            [parent, start, current],
-            oldFragment.children[i],
-            newFragment.children[i],
-            false,
-            i,
-        );
-        if (i == 0) {
-            current = newFragment.children[0].el;
-        } else if (i > 0) {
-            current = current?.nextSibling || end;
+        this.hooks.orphan(component.compHooks - 1);
+
+        if (component.remember) {
+            this.memory.memorize(
+                this.memoryPrefix + component.stringified,
+                data,
+                component.invalidAfter,
+            );
         }
     }
 
-    return newFragment;
-};
-
-/**
- *
- */
-const RenderVDOM = {
-    createVNode,
     /**
-     *
+     * Handle component's state application
+     * @param {VNodeComponent} component
+     */
+    handleComponentApplyState(component) {
+        this.hooks.allocate(component.compHooks - 1);
+        if (
+            component.remember &&
+            this.memory.remembered(this.memoryPrefix + component.stringified)
+        ) {
+            this.hooks.overwrite(
+                this.memory.recall(this.memoryPrefix + component.stringified),
+                component.recompute,
+            );
+        }
+    }
+
+    /**
+     * @param {Element} parent
+     * @param {VNode | VNodeComponent | undefined } old
+     * @param {VNode | VNodeComponent | undefined } newOne
+     * @returns {VNode | VNodeComponent | null}
+     */
+    handleComponent(parent, old, newOne) {
+        if (VDOM.isVNodeComponent(old) && VDOM.isVNodeComponent(newOne)) {
+            if (old.stringified !== newOne.stringified) {
+                this.handleComponentState(old, newOne);
+            }
+
+            newOne.vdom = this.patch(parent, old.vdom, newOne.render(), true);
+            return newOne;
+        } else if (VDOM.isVNodeComponent(old) && !VDOM.isVNodeComponent(newOne)) {
+            this.handleComponentRetrieval(old);
+
+            return this.patch(parent, old.vdom, newOne, true);
+        } else if (!VDOM.isVNodeComponent(old) && VDOM.isVNodeComponent(newOne)) {
+            this.handleComponentApplyState(newOne);
+
+            newOne.vdom = this.patch(parent, old, newOne.render(), true);
+            return newOne;
+        } else {
+            console.error("Impossible", old, newOne);
+            return null;
+        }
+    }
+
+    /**
+     * @param {Element} parent
+     * @param {VNode | VNodeComponent | null | undefined} oldNode
+     * @param {VNode | VNodeComponent | null | undefined} newNode
+     * @param {boolean} skip
+     * @returns {VNode | null}
+     */
+    patch(parent, oldNode, newNode, skip = false, type = -1) {
+        if (oldNode == null && newNode == null) return null;
+
+        if (!skip && (VDOM.isVNodeComponent(oldNode) || VDOM.isVNodeComponent(newNode))) {
+            return this.handleComponent(parent, oldNode, newNode);
+        }
+
+        if (newNode == null || newNode == undefined) {
+            if (oldNode?.tag == "#fragment") {
+                let node = oldNode.el;
+                const end = oldNode._end;
+
+                if (end == undefined) {
+                    return null;
+                }
+                while (node && node !== end) {
+                    const next = node.nextSibling;
+                    parent.removeChild(node);
+                    node = next;
+                }
+
+                return null;
+            }
+            this.cleanupVNode(oldNode);
+            if (type > -1) parent[0].removeChild(oldNode.el);
+            else parent.removeChild(oldNode.el);
+            return null;
+        }
+
+        if (newNode.tag === "#text") {
+            if (oldNode?.tag === "#text") {
+                const oldText = oldNode.children?.[0];
+                const newText = newNode.children?.[0];
+
+                if (oldText !== newText && oldNode.el) {
+                    oldNode.el.nodeValue = newText;
+                }
+                newNode.el = oldNode?.el;
+                return newNode;
+            }
+
+            if (oldNode?.tag == "#fragment") {
+                let node = oldNode.el;
+                const end = oldNode._end;
+
+                if (end == undefined) {
+                    return null;
+                }
+
+                while (node && node !== end) {
+                    const next = node.nextSibling;
+                    parent.removeChild(node);
+                    node = next;
+                }
+
+                const newEl = this.renderVNode(newNode);
+                parent.replaceChild(newEl, oldNode._end);
+                newNode.el = newEl;
+
+                return newNode;
+            }
+
+            const newEl = this.renderVNode(newNode);
+            if (oldNode?.el) {
+                parent.replaceChild(newEl, oldNode.el);
+            } else {
+                parent.appendChild(newEl);
+            }
+
+            newNode.el = newEl;
+            return newNode;
+        }
+
+        if (oldNode == null) {
+            if (newNode.tag === "#fragment") {
+                const frag = this.renderVNode(newNode);
+                parent.appendChild(frag);
+                return newNode;
+            }
+
+            const el = this.renderVNode(newNode);
+            if (type == 0) parent[1].after(el);
+            else if (type > 0) parent[2].after(el);
+            else parent.appendChild(el);
+            newNode.el = el;
+            return newNode;
+        }
+
+        if (oldNode.tag === "#fragment" && newNode.tag !== "#fragment") {
+            let node = oldNode.el;
+            const end = oldNode._end;
+
+            if (end == undefined) {
+                return;
+            }
+
+            while (node && node !== end) {
+                const next = node.nextSibling;
+                if (type > -1) parent[0].removeChild(node);
+                else parent.removeChild(node);
+                node = next;
+            }
+
+            const newEl = this.renderVNode(newNode);
+            if (type > -1) parent[0].removeChild(node);
+            else parent.replaceChild(newEl, oldNode._end);
+
+            return newNode;
+        }
+
+        if (oldNode.tag == "#fragment" && newNode.tag == "#fragment") {
+            this.patchFragmentChild(parent, oldNode, newNode);
+            newNode.el = oldNode.el;
+            newNode._end = oldNode._end;
+            return newNode;
+        }
+
+        if (oldNode.tag !== newNode.tag) {
+            this.cleanupVNode(oldNode);
+
+            if (newNode.tag === "#fragment") {
+                const frag = this.renderVNode(newNode);
+                if (type > -1) parent[0].replaceChild(frag, oldNode.el);
+                else parent.replaceChild(frag, oldNode.el);
+                return newNode;
+            }
+
+            const el = this.renderVNode(newNode);
+            if (type > -1) parent[0].replaceChild(el, oldNode.el);
+            else parent.replaceChild(el, oldNode.el);
+            newNode.el = el;
+            return newNode;
+        }
+
+        if (newNode.tag === "svg") {
+            this.cleanupVNode(oldNode);
+
+            const el = this.renderVNode(newNode, true);
+            parent.replaceChild(el, oldNode.el);
+            newNode.el = el;
+            return newNode;
+        }
+
+        if (oldNode.stringifiedProps !== newNode.stringifiedProps) {
+            requestAnimationFrame(() => {
+                this.updateProps(oldNode.el, oldNode.props || {}, newNode.props || {});
+            });
+        }
+
+        if (newNode.tag === "input" && oldNode.el?.value !== newNode.props?.value) {
+            oldNode.el.value = newNode.props.value;
+        }
+
+        const oldChildren = oldNode.children || [];
+        const newChildren = newNode.children || [];
+        if (oldNode.props?.keyed && newNode.props?.keyed) {
+            this.patchChildrenWithKeys(oldNode.el, oldChildren, newChildren);
+        } else {
+            const max = Math.max(oldChildren.length, newChildren.length);
+            for (let i = 0; i < max; i++) {
+                this.patch(
+                    oldNode?.tag === "#fragment" ? parent : oldNode.el,
+                    oldChildren[i],
+                    newChildren[i],
+                );
+            }
+        }
+
+        if (newNode.tag === "#fragment") {
+            newNode._end = oldNode._end;
+        }
+        newNode.el = oldNode.el;
+        return newNode;
+    }
+
+    patchFragmentChild(parent, oldFragment, newFragment) {
+        const start = oldFragment.el;
+        const end = oldFragment._end;
+        let current = parent;
+
+        const max = Math.max(
+            oldFragment.children.length,
+            newFragment.children.length,
+        );
+        for (let i = 0; i < max; i++) {
+            this.patch(
+                [parent, start, current],
+                oldFragment.children[i],
+                newFragment.children[i],
+                false,
+                i,
+            );
+            if (i == 0) {
+                current = newFragment.children[0].el;
+            } else if (i > 0) {
+                current = current?.nextSibling || end;
+            }
+        }
+
+        return newFragment;
+    }
+
+    // ---- top-level render/update -------------------------------------------
+
+    /**
      * @param {VNode} vnode
      * @param {Element|string} container
      * @returns {VNode | null}
      */
     render(vnode, container) {
         container =
-            typeof container === "string" ? getTarget(container) : container;
+            typeof container === "string" ? this.getTarget(container) : container;
         container.innerHTML = "";
         const node =
             typeof vnode === "string"
                 ? vnode
-                : createVNode(vnode.tag, vnode.props, vnode.children);
-        return patch(container, null, node);
-    },
+                : this.createVNode(vnode.tag, vnode.props, vnode.children);
+        return this.patch(container, null, node);
+    }
+
     /**
-     *
      * @param {Element} container
      * @param {VNode|null} oldNode
      * @param {VNode|null} newNode
      * @returns {VNode|null}
      */
     update(container, oldNode, newNode) {
-        return patch(container, oldNode, newNode);
-    },
-};
-
-const __ = (tag, props = {}, ...children) => {
-    return renderVNode(createVNode(tag, props, children));
-};
-/**
- *
- * @param {String|Document|Node} selector
- * @param {Document} scope
- * @returns
- */
-const getTarget = (selector, scope = document) => {
-    if (selector instanceof Node || selector instanceof Document) {
-        return scope;
+        return this.patch(container, oldNode, newNode);
     }
-    const target = scope.querySelector(selector);
-    if (!target) throw new Error(`Target "${scope}" not found`);
-    return target;
-};
 
-let customVDom = {};
+    /**
+     * @param {String|Document|Node} selector
+     * @param {Document} scope
+     */
+    getTarget(selector, scope = document) {
+        if (selector instanceof Node || selector instanceof Document) {
+            return scope;
+        }
+        const target = scope.querySelector(selector);
+        if (!target) throw new Error(`Target "${scope}" not found`);
+        return target;
+    }
 
-/**
- * @param {string} tag
- * @param {(props: any, ...children: VNodeChild[])} resolver
- */
-const registerVdom = (tag, resolver) => {
-    customVDom[tag] = resolver;
-};
-/**
- * More direct way to create vnode
- */
-function vnode(tag, props, ...children) {
-    let propType = typeof props;
+    /**
+     * @param {string} tag
+     * @param {(props: any, ...children: VNodeChild[])} resolver
+     */
+    registerVdom(tag, resolver) {
+        this.customVDom[tag] = resolver;
+    }
 
-    if (propType === "string" || propType === "number") {
-        return createVNode(tag, {}, props, children);
-    } else if (Array.isArray(props)) {
-        return createVNode(tag, {}, props, children);
-    } else if (children.length == 0 && props?.tag) {
-        return createVNode(tag, {}, props);
-    } else {
-        return createVNode(tag, props, children);
+    /**
+     * More direct way to create vnode
+     */
+    vnode(tag, props, ...children) {
+        let propType = typeof props;
+
+        if (propType === "string" || propType === "number") {
+            return this.createVNode(tag, {}, props, children);
+        } else if (Array.isArray(props)) {
+            return this.createVNode(tag, {}, props, children);
+        } else if (children.length == 0 && props?.tag) {
+            return this.createVNode(tag, {}, props);
+        } else {
+            return this.createVNode(tag, props, children);
+        }
+    }
+
+    renderTag(tag, props = {}, ...children) {
+        return this.renderVNode(this.createVNode(tag, props, children));
+    }
+
+    /**
+     * DSL-VDOM factory proxy: dynamic HTML tag functions (`html.div(...)`),
+     * mount helpers, shadow DOM mounting, fragment creation and the VDOM
+     * render passthrough.
+     * @private
+     */
+    _createHtmlProxy() {
+        const self = this;
+
+        const actions = {
+            mount: (el, selector, scope = document) =>
+                self.getTarget(selector, scope).replaceChildren(el),
+
+            push: (el, selector, scope = document) =>
+                self.getTarget(selector, scope).appendChild(el),
+
+            mountShadow: (el, selector, scope = document) => {
+                const target = self.getTarget(selector, scope);
+                if (!target._shadow) {
+                    target._shadow = target.attachShadow({ mode: "open" });
+                }
+                target._shadow.replaceChildren(el);
+                return target._shadow;
+            },
+
+            element: (tag, props = {}, ...children) =>
+                self.createVNode(tag, props, children),
+
+            vdom: self.RenderVDOM,
+
+            _: (tag, props = {}, ...children) => self.renderTag(tag, props, ...children),
+
+            $: (...children) => ({
+                tag: "#fragment",
+                children: self.flattenChildren(children).map((n) => self.wrapPrimitive(n)),
+                isComp: false,
+            }),
+        };
+
+        return new Proxy(actions, {
+            get: (target, tag) => {
+                return (
+                    target[tag] ||
+                    self.customVDom[tag] ||
+                    ((props = {}, ...children) => self.vnode(tag, props, ...children))
+                );
+            },
+        });
     }
 }
 
-/**
- * DSL-VDOM factory proxy.
- *
- * Provides:
- * - Dynamic HTML tag functions (e.g. `html.div(...)`)
- * - DOM mount helpers
- * - Shadow DOM mounting
- * - Fragment creation
- * - VDOM rendering passthrough
- *
- * @type {HTMLProxy}
- *
- * @example
- * html.div({ class: "box" }, "Hello")
- * html.mount(node, "#app")
- * html.$(child1, child2)
- */
-const html = new Proxy(
-    /**
-     * Built-in DSL actions.
-     */
-    {
-        /**
-         * Replace target children with element.
-         */
-        mount: (el, selector, scope = document) =>
-            getTarget(selector, scope).replaceChildren(el),
-
-        /**
-         * Append element to target.
-         */
-        push: (el, selector, scope = document) =>
-            getTarget(selector, scope).appendChild(el),
-
-        /**
-         * Mount into Shadow DOM (open).
-         * Reuses existing shadow root if present.
-         */
-        mountShadow: (el, selector, scope = document) => {
-            const target = getTarget(selector, scope);
-            if (!target._shadow) {
-                target._shadow = target.attachShadow({ mode: "open" });
-            }
-            target._shadow.replaceChildren(el);
-            return target._shadow;
-        },
-
-        /**
-         * Create VNode from tag, props, and children.
-         *
-         * @param {string} tag
-         * @param {object} props
-         * @param  {...VNodeChild[][]} children
-         * @returns
-         */
-        element: (tag, props = {}, ...children) =>
-            createVNode(tag, props, children),
-
-        /**
-         * Render Virtual DOM tree.
-         */
-        vdom: RenderVDOM,
-
-        /**
-         * Placeholder / noop hook.
-         */
-        _: __,
-
-        /**
-         * Fragment factory.
-         */
-        $: (...children) => ({
-            tag: "#fragment",
-            children: flattenChildren(children).map(wrapPrimitive),
-            isComp: false,
-        }),
-    },
-    {
-        /**
-         * Trap for dynamic property access.
-         *
-         * @param {object} _
-         * @param {string} tag
-         *
-         * @returns {Function}
-         * Tag factory, action helper, or custom VDOM handler.
-         */
-        get: (_, tag) => {
-            /**
-             * Resolution order:
-             * 1. Built-in actions
-             * 2. Custom VDOM extensions
-             * 3. HTML tag factory
-             */
-            return (
-                _[tag] || customVDom[tag] ||
-                /**
-                 * HTML element VNode factory.
-                 *
-                 * @param {object|string|any[]} [props]
-                 * @param {...any} children
-                 *
-                 * @returns {VNode} VNode
-                 */
-                ((props = {}, ...children) => vnode(tag, props, ...children))
-            );
-        },
-    },
-);
-
 export {
-    html,
-    vnode,
-    getTarget,
-    getKey,
-    updateProps,
-    createVNode,
-    renderVNode,
-    cleanupVNode,
-    RenderVDOM,
-    patch,
-    registerVdom,
-    pushJob,
-    executeJobs,
+    VDOM,
+    Hooks,
 };
