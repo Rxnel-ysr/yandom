@@ -1,3 +1,4 @@
+/// <reference path="../@types/vdom.hooks.js" />
 "use strict";
 import { value, valueComputed } from "../helper/helper.js";
 

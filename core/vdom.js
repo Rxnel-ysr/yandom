@@ -925,7 +925,4 @@ class VDOM {
     }
 }
 
-export {
-    VDOM,
-    Hooks,
-};
+export default VDOM;
