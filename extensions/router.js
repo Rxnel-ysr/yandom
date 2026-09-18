@@ -366,40 +366,6 @@ class Router {
     }
 
     /**
-     * Search for a route in the radix tree
-     * @param {string} path
-     * @param {RadixNode} node
-     * @param {Record<string, string>} params
-     * @returns {RouteComponent | null}
-     * @private
-     */
-    _searchPath(path, node, params = {}) {
-        if (path === "") {
-            return node.route;
-        }
-
-        for (let [childPath, childNode] of node.children) {
-            if (childNode.isParam) {
-                // Handle parameter nodes
-                const slashIndex = path.indexOf("/");
-                const paramValue = slashIndex === -1 ? path : path.slice(0, slashIndex);
-                const remainingPath =
-                    slashIndex === -1 ? "" : path.slice(slashIndex + 1);
-
-                params[childNode.paramKeys[0]] = decodeURIComponent(paramValue);
-                const result = this._searchPath(remainingPath, childNode, params);
-                if (result) return result;
-            } else if (path.startsWith(childPath)) {
-                const remainingPath = path.slice(childPath.length);
-                const result = this._searchPath(remainingPath, childNode, params);
-                if (result) return result;
-            }
-        }
-
-        return null;
-    }
-
-    /**
      * Parse path and extract parameter names
      * @param {string} path
      * @returns {{segments: string[], paramKeys: string[]}}
@@ -517,7 +483,7 @@ class Router {
             }
 
             // Try parameter match
-            for (let [childPath, childNode] of node.children) {
+            for (let [_, childNode] of node.children) {
                 if (childNode.isParam && childNode.paramKeys[0]) {
                     const newParams = { ...currentParams };
                     newParams[childNode.paramKeys[0]] = decodeURIComponent(segment);

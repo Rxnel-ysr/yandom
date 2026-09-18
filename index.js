@@ -1,4 +1,4 @@
-import { VDOM, Hooks } from "./core/vdom.js"
+import { VDOM, Hooks } from "./core/vdom.js";
 import Memory from "./core/memory.js";
 
 // ---- composition root: wire the engine and hook runtime together ----------
