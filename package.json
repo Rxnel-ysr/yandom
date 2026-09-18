@@ -1,5 +1,5 @@
 {
-  "name": "yamdom",
+  "name": "yandom",
   "version": "1.0.0",
   "description": "A lightweight, reactive Virtual DOM library with custom hooks, component tracking, and advanced DOM diffing.",
   "type": "module",
