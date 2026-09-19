@@ -1,14 +1,41 @@
-import VDOM  from "./core/vdom.js";
-import Hooks from "./core/vdom.hooks.js";
+"use strict";
+import VDOM from "./core/vdom.js";
+import {Hooks, Root} from "./core/vdom.hooks.js";
 import Memory from "./core/memory.js";
 
-// ---- composition root: wire the engine and hook runtime together ----------
+/**
+ * Create a setup with initialized Root
+ * @overload
+ * @param {string} selector
+ * @returns {[Root, VDOM, Hooks]}
+ */
 
-const vdom = new VDOM(new Memory());
-const hooks = new Hooks(vdom);
-vdom.setHooks(hooks);
+/**
+ * Create a setup without Root
+ * @overload
+ * @param {null} [selector]
+ * @returns {[VDOM, Hooks]}
+ */
 
-// Backward-compatible bound exports (mirrors the original vdom.js + vdom.hooks.js API)
+/**
+ * @param {string|null} [selector]
+ * @returns {[Root, VDOM, Hooks] | [VDOM, Hooks]}
+ */
+function createSetup(selector = null) {
+    const vdom = new VDOM(new Memory());
+    const hooks = new Hooks(vdom);
+
+    vdom.setHooks(hooks);
+
+    if (typeof selector === "string") {
+        return [hooks.createRoot(selector), vdom, hooks];
+    }
+
+    return [vdom, hooks];
+}
+
+const [vdom, hooks] = createSetup();
+
 const html = vdom.html;
 const vnode = vdom.vnode.bind(vdom);
 const getTarget = vdom.getTarget.bind(vdom);
@@ -82,4 +109,6 @@ export {
     getData,
     bulkSetState,
     hmr,
+    // setup    
+    createSetup
 }

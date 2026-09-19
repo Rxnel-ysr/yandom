@@ -1,7 +1,7 @@
 {
   "name": "yandom",
-  "version": "1.0.0",
-  "description": "A lightweight, reactive Virtual DOM library with custom hooks, component tracking, and advanced DOM diffing.",
+  "version": "0.0.5",
+  "description": "A lightweight, reactive Virtual DOM library with hooks, component tracking, and advanced DOM diffing.",
   "type": "module",
   "main": "./index.js",
   "exports": {

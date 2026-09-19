@@ -1,6 +1,8 @@
 /// <reference path="../@types/vdom.hooks.js" />
+/// <reference path="../@types/vdom.js" />
 "use strict";
 import { value, valueComputed } from "../helper/helper.js";
+import VDOM from "./vdom.js";
 
 function onReady(cb, delay = 1000) {
     if (document.readyState === "loading") {
@@ -13,25 +15,44 @@ function onReady(cb, delay = 1000) {
 }
 
 /**
+ * Thrown when a hook (or any hook-chain utility) is used while no Root is
+ * mounted / currently rendering.
+ */
+class RootError extends Error {
+    /** @param {string} name */
+    constructor(name) {
+        super(
+            `[hooks] "${name}" was called without an active root.\n` +
+            `Hooks can only run while a Root is rendering. Start one first:\n\n` +
+            `    const hooks = new Hooks(vdom);\n` +
+            `    hooks.createRoot("#app").render(App);\n\n` +
+            `If you are calling "${name}" outside of a component body ` +
+            `(module scope, an event handler, a setTimeout callback, ...), ` +
+            `move it inside the render function.`,
+        );
+        this.name = "RootError";
+    }
+}
+
+/**
  * A single mounted application root: owns the hook chain for the top level
  * component, the last rendered vdom tree, and re-render scheduling.
  */
 class Root {
     /**
      * @param {Hooks} hooksRuntime
-     * @param {import("./vdom.js").VDOM} vdom
      * @param {Element|Document|DocumentFragment|String} target
      */
-    constructor(hooksRuntime, vdom, target) {
+    constructor(hooksRuntime, target) {
         /** @type {Hooks} */
         this.hooksRuntime = hooksRuntime;
-        /** @type {import("./vdom.js").VDOM} */
-        this.vdom = vdom;
+        /** @type {VDOM} */
+        this.vdom = hooksRuntime.vdom;
         this.hooks = { next: null };
         this.hookNode = null;
         /** last rendered vdom tree (kept separate from `this.vdom`, the engine) */
         this.vdomTree = null;
-        this.target = vdom.getTarget(target);
+        this.target = this.vdom.getTarget(target);
         /** @type {Function|null} */
         this.renderFn = null;
     }
@@ -42,7 +63,6 @@ class Root {
      */
     render(app) {
         this.renderFn = app;
-        this.hooksRuntime.currentComponent = this;
         this.hooksRuntime.handler = () => this.rerender();
         this.rerender();
         return this;
@@ -77,6 +97,7 @@ class Root {
 
             runtime.renderDebounce = setTimeout(() => {
                 try {
+                    runtime.currentComponent = this;
                     runtime.resetContext();
                     const newVNode = this.renderFn();
                     if (!this.vdomTree) {
@@ -107,7 +128,7 @@ class Root {
  */
 class Hooks {
     /**
-     * @param {import("./vdom.js").VDOM} vdom - engine instance exposing
+     * @param {VDOM} vdom - engine instance exposing
      *  getTarget/render/update/executeJobs
      */
     constructor(vdom) {
@@ -120,12 +141,34 @@ class Hooks {
         this.renderDebounce = null;
     }
 
+    /**
+     * Guard: returns the active Root or throws.
+     * @param {string} name - the caller, used in the error message
+     * @returns {Root}
+     */
+    requireRoot(name) {
+        if (!this.currentComponent) throw new RootError(name);
+        return this.currentComponent;
+    }
+
+    /**
+     * Guard: returns the current position in the active Root's hook chain,
+     * lazily initialising it if the chain has not been walked yet.
+     * @param {string} name - the caller, used in the error message
+     */
+    requireHookNode(name) {
+        const root = this.requireRoot(name);
+        if (!root.hookNode) root.hookNode = root.hooks;
+        return root.hookNode;
+    }
+
     nextNode(hookNode) {
         return (hookNode.next = hookNode.next || { next: null });
     }
 
     resetContext() {
-        this.currentComponent.hookNode = this.currentComponent.hooks;
+        const root = this.requireRoot("resetContext");
+        root.hookNode = root.hooks;
     }
 
     triggerRerender() {
@@ -146,10 +189,7 @@ class Hooks {
      * @param {number} [n=1]
      */
     resets(n = 1) {
-        if (!this.currentComponent) return;
-
-        let hookNode = this.currentComponent.hookNode;
-        if (!hookNode) return;
+        let hookNode = this.requireHookNode("resets");
 
         for (let i = 1; i <= n && hookNode.next; i++) {
             hookNode.value = undefined;
@@ -158,7 +198,7 @@ class Hooks {
     }
 
     allocate(n) {
-        let start = this.currentComponent.hookNode;
+        let start = this.requireHookNode("allocate");
         let actual = n - 1;
 
         if (actual > -1) {
@@ -173,7 +213,7 @@ class Hooks {
      * @param {Boolean} recompute
      */
     overwrite(array, recompute = false) {
-        let start = this.currentComponent.hookNode;
+        let start = this.requireHookNode("overwrite");
         array.map((e) => {
             if (recompute && typeof e?.recompute !== "undefined") {
                 e.recompute = true;
@@ -184,7 +224,7 @@ class Hooks {
     }
 
     orphan(n) {
-        let start = this.currentComponent.hookNode;
+        let start = this.requireHookNode("orphan");
         let end = start;
 
         for (let i = 1; i <= n; i++) {
@@ -195,10 +235,7 @@ class Hooks {
     }
 
     getData(until) {
-        if (!this.currentComponent) return;
-
-        const hookNode = this.currentComponent.hookNode;
-        if (!hookNode) return;
+        const hookNode = this.requireHookNode("getData");
         let n = 0;
         let data = [];
 
@@ -213,8 +250,7 @@ class Hooks {
     }
 
     getCurrentHookNode() {
-        if (!this.currentComponent) return;
-        return this.currentComponent.hookNode;
+        return this.requireHookNode("getCurrentHookNode");
     }
 
     /**
@@ -235,7 +271,7 @@ class Hooks {
      * @param {Function} compFn
      * @param {object} args
      * @param {object|null} [options]
-     * @returns {import("../@types/vdom.js").VNodeComponent}
+     * @returns {VNodeComponent}
      */
     comp(
         compFn,
@@ -278,16 +314,14 @@ class Hooks {
      * Destroys all remaining hook states from current position to end of chain
      */
     destroy() {
-        if (!this.currentComponent) return;
-
-        let hookNode = this.currentComponent.hookNode;
-        if (!hookNode) return;
+        const root = this.requireRoot("destroy");
+        let hookNode = this.requireHookNode("destroy");
 
         while (hookNode.next) {
             hookNode.value = undefined;
             hookNode = hookNode.next;
         }
-        this.currentComponent.hookNode = hookNode;
+        root.hookNode = hookNode;
     }
 
     /**
@@ -297,9 +331,10 @@ class Hooks {
      * @returns {[T, (val: T | ((prev: T) => T)) => void]}
      */
     useState(initial, handleInputEvent = false) {
-        let hookNode = this.currentComponent?.hookNode;
+        const root = this.requireRoot("useState");
+        let hookNode = this.requireHookNode("useState");
 
-        if (typeof hookNode?.value === "undefined") {
+        if (typeof hookNode.value === "undefined") {
             hookNode.value = initial;
         }
 
@@ -310,31 +345,37 @@ class Hooks {
             hookNode.value = typeof val == "function" ? val(hookNode?.value) : val;
 
             if (!this.disableRerender) {
-                this.currentComponent.rerender();
+                root.rerender();
             }
         };
 
-        this.currentComponent.hookNode = this.nextNode(hookNode);
+        root.hookNode = this.nextNode(hookNode);
 
         return [hookNode?.value, set];
     }
 
     bulkSetState(callback) {
-        this.disableRerender = true;
-        callback();
-        this.disableRerender = false;
+        const root = this.requireRoot("bulkSetState");
 
-        this.currentComponent.rerender();
+        this.disableRerender = true;
+        try {
+            callback();
+        } finally {
+            this.disableRerender = false;
+        }
+
+        root.rerender();
     }
 
     useRef(initial) {
-        let hookNode = this.currentComponent.hookNode;
+        const root = this.requireRoot("useRef");
+        let hookNode = this.requireHookNode("useRef");
 
-        if (typeof hookNode?.value === "undefined") {
+        if (typeof hookNode.value === "undefined") {
             hookNode.value = { current: initial };
         }
 
-        this.currentComponent.hookNode = this.nextNode(hookNode);
+        root.hookNode = this.nextNode(hookNode);
         return hookNode?.value;
     }
 
@@ -343,7 +384,8 @@ class Hooks {
      * @param {any[]|null} deps
      */
     useEffect(effect, deps = null) {
-        let hookNode = this.currentComponent.hookNode;
+        const root = this.requireRoot("useEffect");
+        let hookNode = this.requireHookNode("useEffect");
 
         const hasNoDeps = !deps;
 
@@ -369,7 +411,7 @@ class Hooks {
             hookNode.value = oldHook;
         }
 
-        this.currentComponent.hookNode = this.nextNode(hookNode);
+        root.hookNode = this.nextNode(hookNode);
     }
 
     /**
@@ -379,7 +421,8 @@ class Hooks {
      * @returns {T}
      */
     useMemo(compute, deps) {
-        let hookNode = this.currentComponent.hookNode;
+        const root = this.requireRoot("useMemo");
+        let hookNode = this.requireHookNode("useMemo");
 
         const prev = hookNode?.value;
 
@@ -391,22 +434,25 @@ class Hooks {
         if (hasNoDeps || hasChanged) {
             const value = compute();
             hookNode.value = { value, deps };
-            this.currentComponent.hookNode = hookNode.next = hookNode.next || {
+            root.hookNode = hookNode.next = hookNode.next || {
                 next: null,
             };
             return value;
         }
 
-        this.currentComponent.hookNode = this.nextNode(hookNode);
+        root.hookNode = this.nextNode(hookNode);
         return prev.value;
     }
 
     /**
+     * Create a new Root for current Hooks
+     * ___
+     * Note: Overwriting old Root is initilized twice
      * @param {Element|Document|DocumentFragment|String} root
      * @returns {Root}
      */
     createRoot(root) {
-        return new Root(this, this.vdom, root);
+        return this.currentComponent = new Root(this, root);
     }
 
     /**
@@ -441,5 +487,5 @@ class Hooks {
     }
 }
 
-export { Hooks, Root };
+export { Hooks, Root, RootError };
 export default Hooks;
