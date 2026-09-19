@@ -24,7 +24,6 @@ class VDOM {
         /** @type {Hooks|null} */
         this.hooks = hooks;
 
-
         /**
          * DSL-VDOM factory proxy.
          *
@@ -595,42 +594,67 @@ class VDOM {
         }
     }
 
+    /** Last DOM node owned by a vnode (the end marker for fragments). */
+    lastNode(vnode) {
+        if (!vnode) return null;
+        return vnode.tag === "#fragment" ? (vnode._end ?? vnode.el) : vnode.el;
+    }
+
+    /** Insert `el` (Node or DocumentFragment) after `after`, or append to `parent` when there is no anchor. */
+    insertAfter(parent, el, after) {
+        if (after) after.after(el);
+        else parent.appendChild(el);
+    }
+
+    /** Remove every DOM node of a fragment, start marker through end marker (nested content included). */
+    removeFragment(frag) {
+        let node = frag.el;
+        const end = this.lastNode(frag);
+        if (!node || !end) return;
+
+        while (node) {
+            const next = node === end ? null : node.nextSibling;
+            node.remove();
+            node = next;
+        }
+    }
+
+    /** Swap a whole fragment for a single DOM node. */
+    replaceFragment(frag, newEl) {
+        const end = this.lastNode(frag);
+        if (!end) return;
+        end.after(newEl); // outside the range that removeFragment deletes
+        this.removeFragment(frag);
+    }
+
     /**
-     * @param {Element} parent
+     * @param {Element} parent  Real DOM parent. Never an array.
      * @param {VNode | VNodeComponent | null | undefined} oldNode
      * @param {VNode | VNodeComponent | null | undefined} newNode
      * @param {boolean} skip
+     * @param {Node | null} after  Only used when oldNode is missing: the DOM node the new
+     *                             content is inserted after. null appends to `parent`.
      * @returns {VNode | null}
      */
-    patch(parent, oldNode, newNode, skip = false, type = -1) {
+    patch(parent, oldNode, newNode, skip = false, after = null) {
         if (oldNode == null && newNode == null) return null;
 
-        if (!skip && (VDOM.isVNodeComponent(oldNode) || VDOM.isVNodeComponent(newNode))) {
-            return this.handleComponent(parent, oldNode, newNode);
+        if (
+            !skip &&
+            (VDOM.isVNodeComponent(oldNode) || VDOM.isVNodeComponent(newNode))
+        ) {
+            return this.handleComponent(parent, oldNode, newNode, after);
         }
 
-        if (newNode == null || newNode == undefined) {
-            if (oldNode?.tag == "#fragment") {
-                let node = oldNode.el;
-                const end = oldNode._end;
-
-                if (end == undefined) {
-                    return null;
-                }
-                while (node && node !== end) {
-                    const next = node.nextSibling;
-                    parent.removeChild(node);
-                    node = next;
-                }
-
-                return null;
-            }
+        // Removal
+        if (newNode == null) {
             this.cleanupVNode(oldNode);
-            if (type > -1) parent[0].removeChild(oldNode.el);
-            else parent.removeChild(oldNode.el);
+            if (oldNode.tag === "#fragment") this.removeFragment(oldNode);
+            else oldNode.el?.remove();
             return null;
         }
 
+        // Text
         if (newNode.tag === "#text") {
             if (oldNode?.tag === "#text") {
                 const oldText = oldNode.children?.[0];
@@ -639,100 +663,57 @@ class VDOM {
                 if (oldText !== newText && oldNode.el) {
                     oldNode.el.nodeValue = newText;
                 }
-                newNode.el = oldNode?.el;
-                return newNode;
-            }
-
-            if (oldNode?.tag == "#fragment") {
-                let node = oldNode.el;
-                const end = oldNode._end;
-
-                if (end == undefined) {
-                    return null;
-                }
-
-                while (node && node !== end) {
-                    const next = node.nextSibling;
-                    parent.removeChild(node);
-                    node = next;
-                }
-
-                const newEl = this.renderVNode(newNode);
-                parent.replaceChild(newEl, oldNode._end);
-                newNode.el = newEl;
-
+                newNode.el = oldNode.el;
                 return newNode;
             }
 
             const newEl = this.renderVNode(newNode);
-            if (oldNode?.el) {
+            if (oldNode?.tag === "#fragment") {
+                this.cleanupVNode(oldNode);
+                this.replaceFragment(oldNode, newEl);
+            } else if (oldNode?.el) {
                 parent.replaceChild(newEl, oldNode.el);
             } else {
-                parent.appendChild(newEl);
+                this.insertAfter(parent, newEl, after);
             }
 
             newNode.el = newEl;
             return newNode;
         }
 
+        // Insertion
         if (oldNode == null) {
-            if (newNode.tag === "#fragment") {
-                const frag = this.renderVNode(newNode);
-                parent.appendChild(frag);
-                return newNode;
-            }
-
             const el = this.renderVNode(newNode);
-            if (type == 0) parent[1].after(el);
-            else if (type > 0) parent[2].after(el);
-            else parent.appendChild(el);
+            this.insertAfter(parent, el, after);
+            // renderVNode already records el/_end on fragment vnodes
+            if (newNode.tag !== "#fragment") newNode.el = el;
+            return newNode;
+        }
+
+        // Fragment -> anything else
+        if (oldNode.tag === "#fragment" && newNode.tag !== "#fragment") {
+            this.cleanupVNode(oldNode);
+            const el = this.renderVNode(newNode);
+            this.replaceFragment(oldNode, el);
             newNode.el = el;
             return newNode;
         }
 
-        if (oldNode.tag === "#fragment" && newNode.tag !== "#fragment") {
-            let node = oldNode.el;
-            const end = oldNode._end;
-
-            if (end == undefined) {
-                return;
-            }
-
-            while (node && node !== end) {
-                const next = node.nextSibling;
-                if (type > -1) parent[0].removeChild(node);
-                else parent.removeChild(node);
-                node = next;
-            }
-
-            const newEl = this.renderVNode(newNode);
-            if (type > -1) parent[0].removeChild(node);
-            else parent.replaceChild(newEl, oldNode._end);
-
-            return newNode;
-        }
-
-        if (oldNode.tag == "#fragment" && newNode.tag == "#fragment") {
+        // Fragment -> fragment
+        if (oldNode.tag === "#fragment" && newNode.tag === "#fragment") {
             this.patchFragmentChild(parent, oldNode, newNode);
             newNode.el = oldNode.el;
             newNode._end = oldNode._end;
             return newNode;
         }
 
+        // Tag changed
         if (oldNode.tag !== newNode.tag) {
             this.cleanupVNode(oldNode);
 
-            if (newNode.tag === "#fragment") {
-                const frag = this.renderVNode(newNode);
-                if (type > -1) parent[0].replaceChild(frag, oldNode.el);
-                else parent.replaceChild(frag, oldNode.el);
-                return newNode;
-            }
-
             const el = this.renderVNode(newNode);
-            if (type > -1) parent[0].replaceChild(el, oldNode.el);
-            else parent.replaceChild(el, oldNode.el);
-            newNode.el = el;
+            parent.replaceChild(el, oldNode.el);
+            if (newNode.tag !== "#fragment") newNode.el = el;
             return newNode;
         }
 
@@ -762,49 +743,34 @@ class VDOM {
         } else {
             const max = Math.max(oldChildren.length, newChildren.length);
             for (let i = 0; i < max; i++) {
-                this.patch(
-                    oldNode?.tag === "#fragment" ? parent : oldNode.el,
-                    oldChildren[i],
-                    newChildren[i],
-                );
+                this.patch(oldNode.el, oldChildren[i], newChildren[i]);
             }
         }
 
-        if (newNode.tag === "#fragment") {
-            newNode._end = oldNode._end;
-        }
         newNode.el = oldNode.el;
         return newNode;
     }
 
     patchFragmentChild(parent, oldFragment, newFragment) {
-        const start = oldFragment.el;
-        const end = oldFragment._end;
-        let current = parent;
+        const oldChildren = oldFragment.children;
+        const newChildren = newFragment.children;
+        const max = Math.max(oldChildren.length, newChildren.length);
 
-        const max = Math.max(
-            oldFragment.children.length,
-            newFragment.children.length,
-        );
+        let cursor = oldFragment.el;
+
         for (let i = 0; i < max; i++) {
-            this.patch(
-                [parent, start, current],
-                oldFragment.children[i],
-                newFragment.children[i],
+            const result = this.patch(
+                parent,
+                oldChildren[i],
+                newChildren[i],
                 false,
-                i,
+                cursor,
             );
-            if (i == 0) {
-                current = newFragment.children[0].el;
-            } else if (i > 0) {
-                current = current?.nextSibling || end;
-            }
+            if (result) cursor = this.lastNode(result);
         }
 
         return newFragment;
     }
-
-    // ---- top-level render/update -------------------------------------------
 
     /**
      * @param {VNode} vnode
@@ -904,11 +870,14 @@ class VDOM {
 
             vdom: self.RenderVDOM,
 
-            _: (tag, props = {}, ...children) => self.renderTag(tag, props, ...children),
+            _: (tag, props = {}, ...children) =>
+                self.renderTag(tag, props, ...children),
 
             $: (...children) => ({
                 tag: "#fragment",
-                children: self.flattenChildren(children).map((n) => self.wrapPrimitive(n)),
+                children: self
+                    .flattenChildren(children)
+                    .map((n) => self.wrapPrimitive(n)),
                 isComp: false,
             }),
         };
