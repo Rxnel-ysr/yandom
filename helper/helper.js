@@ -1,22 +1,4 @@
 "use strict";
-class FileReaderHelper {
-  constructor(basePath = "") {
-    this.basePath = basePath;
-  }
-
-  async getFileAsString(filename) {
-    const url = `${this.basePath}/${filename}`.replace(/\/+/g, "/");
-    const response = await fetch(url);
-    return await response.text();
-  }
-}
-
-const fileReader = new FileReaderHelper('/');
-
-const getFileAsString = async (filename) => {
-  return await fileReader.getFileAsString(filename);
-};
-
 /**
  *
  * @param {String} uri
@@ -122,8 +104,6 @@ export {
   trim,
   currentUri,
   uuidv4,
-  FileReaderHelper,
-  getFileAsString,
   value,
   valueComputed,
 };
