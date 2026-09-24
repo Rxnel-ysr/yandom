@@ -4,6 +4,16 @@ import { Hooks } from "./vdom.hooks.js";
 import Memory from "./memory.js";
 
 const memoryPrefix = "ComponentState_";
+const BOOLEAN_PROPS = new Set([
+    "allowfullscreen", "async", "autofocus",
+    "autoplay", "checked", "controls",
+    "default", "defer", "disabled",
+    "formnovalidate", "hidden",
+    "inert", "ismap", "itemscope", "loop",
+    "multiple", "muted", "nomodule",
+    "novalidate", "open", "playsinline",
+    "readonly", "required", "reversed", "selected",
+]);
 
 /**
  * The VDOM rendering engine: virtual node creation, diffing/patching,
@@ -258,6 +268,10 @@ class VDOM {
                     el.style.cssText = "";
                 } else if (key.startsWith("on") && typeof oldValue === "function") {
                     el.removeEventListener(key.slice(2).toLowerCase(), oldValue);
+                } else if (BOOLEAN_PROPS.has(key) && key in el) {
+                    el[key] = false;
+                } else if (key == "value" && key in el) {
+                    el[key] = "";
                 } else {
                     el.removeAttribute(key);
                 }
@@ -280,6 +294,8 @@ class VDOM {
                     if (oldValue)
                         el.removeEventListener(key.slice(2).toLowerCase(), oldValue);
                     el.addEventListener(key.slice(2).toLowerCase(), newValue);
+                } else if (key == "value" && key in el) {
+                    el[key] = BOOLEAN_PROPS.has(key) ? Boolean(newValue) : newValue;
                 } else {
                     el.setAttribute(key, newValue);
                 }
@@ -374,6 +390,10 @@ class VDOM {
         for (let child of children) {
             if (child === null || child === undefined) continue;
             el.appendChild(this.renderVNode(child, isSvg));
+        }
+
+        if (el.tagName === "SELECT" && work.props?.value !== undefined) {
+            el.value = work.props.value;
         }
 
         work.el = el;
@@ -831,6 +851,8 @@ class VDOM {
             return this.createVNode(tag, {}, props, children);
         } else if (children.length == 0 && props?.tag) {
             return this.createVNode(tag, {}, props);
+        } else if (VDOM.isVNode(props) || VDOM.isVNodeComponent(props)) {
+            return this.createVNode(tag, {}, {}, props, children);
         } else {
             return this.createVNode(tag, props, children);
         }

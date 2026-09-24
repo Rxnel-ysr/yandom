@@ -9,7 +9,6 @@
   },
   "files": [
     "core",
-    "router",
     "helper",
     "extensions",
     "@types",

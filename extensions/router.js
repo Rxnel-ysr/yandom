@@ -159,11 +159,7 @@ class Router {
      * @returns {Record<string, string | undefined>}
      */
     getParams() {
-        if (this.proxy) {
-            return this.proxy;
-        }
-
-        return (this.proxy = new Proxy(this.params, {
+        return new Proxy(this.params, {
             get(target, prop, receiver) {
                 if (!(prop in target)) {
                     return undefined;
@@ -171,7 +167,7 @@ class Router {
 
                 return Reflect.get(target, prop, receiver);
             },
-        }));
+        });
     }
 
     /**
@@ -440,9 +436,42 @@ class Router {
      * @returns {void}
      */
     go(uri) {
-        history.pushState({ path: uri }, "", uri);
-        // @ts-ignore
-        this.trigger();
+        const from = currentUri();
+
+        /**
+         * @param {string} target 
+         */
+        const navigate = (target) => {
+            history.pushState({ path: target }, "", target);
+            // @ts-ignore
+            this.trigger();
+        };
+
+        if (typeof this.middleware === "function") {
+            let settled = false;
+            /**
+             * @param {string | false} [arg]
+             */
+            const next = (arg) => {
+                if (settled) return;
+                settled = true;
+
+                if (arg === false) {
+                    // navigation cancelled
+                    return;
+                }
+                if (typeof arg === "string" && arg !== uri) {
+                    // redirected to a different route
+                    this.go(arg);
+                    return;
+                }
+                navigate(uri);
+            };
+
+            this.middleware(uri, from, next);
+        } else {
+            navigate(uri);
+        }
     }
 
     /**
