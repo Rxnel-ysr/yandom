@@ -3,7 +3,14 @@
 
 "use strict";
 import { currentUri, trim, value } from "../helper/helper.js";
-import { comp, triggerRerender, createVNode, html, pushJob, registerVdom } from "../index.js";
+import {
+    comp,
+    triggerRerender,
+    createVNode,
+    html,
+    pushJob,
+    registerVdom,
+} from "../index.js";
 import Memory from "../core/memory.js";
 
 /**
@@ -225,7 +232,7 @@ class Router {
                     ...this.elementProps,
                     ...props,
                     /**
-                     * @param {PointerEvent} e 
+                     * @param {PointerEvent} e
                      */
                     onclick: (e) => {
                         e.preventDefault();
@@ -252,13 +259,13 @@ class Router {
 
     /**
      * Register fallback route
-     * @param {VNodeFunction} component 
-     * @param {VNodeComponentSetting} opt 
+     * @param {VNodeFunction} component
+     * @param {VNodeComponentSetting} opt
      */
     fallback(component, opt = {}) {
         let c;
-        if (typeof component == 'function') {
-            c = comp(component, {}, { name: "defaultRoute", ...opt })
+        if (typeof component == "function") {
+            c = comp(component, {}, { name: "defaultRoute", ...opt });
         } else {
             c = component;
         }
@@ -439,7 +446,7 @@ class Router {
         const from = currentUri();
 
         /**
-         * @param {string} target 
+         * @param {string} target
          */
         const navigate = (target) => {
             history.pushState({ path: target }, "", target);
@@ -554,10 +561,14 @@ class Router {
 
         if (matchedRoute) {
             this.params = params;
-            result = this._render(matchedRoute, {
-                ...args,
-                ...params,
-            }, path);
+            result = this._render(
+                matchedRoute,
+                {
+                    ...args,
+                    ...params,
+                },
+                path,
+            );
             this.cache.memorize(
                 path,
                 { rendered: result, params, route: matchedRoute },
@@ -576,7 +587,7 @@ class Router {
     /**
      * @param {RouteComponent} route
      * @param {object} args
-     * @param {string} path 
+     * @param {string} path
      * @returns {VNode | VNodeComponent | null}
      */
     _render(route, args, path) {
@@ -597,7 +608,8 @@ class Router {
         if (setting?.cached) {
             setting = { ...setting };
             if (setting?.name) setting.name += path;
-            else throw new Error("`name` setting must be provided if cached enabled.");
+            else
+                throw new Error("`name` setting must be provided if cached enabled.");
         }
 
         try {
@@ -637,7 +649,11 @@ class Router {
 
                 lazyComponent.importedFn = realComponent.default;
                 this.cache.forget(path);
-                this.cache.memorize(path, { rendered, params: args, route }, route.cacheExp);
+                this.cache.memorize(
+                    path,
+                    { rendered, params: args, route },
+                    route.cacheExp,
+                );
 
                 if (location.pathname === path) {
                     // @ts-ignore
