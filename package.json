@@ -5,14 +5,14 @@
   "type": "module",
   "main": "./index.js",
   "exports": {
-    ".": "./index.js"
+    ".": "./entry/vdom.js",
+    "./hook": "./entry/hook.js",
+    "./router": "./entry/router.js"
   },
   "files": [
-    "core",
-    "helper",
-    "extensions",
-    "@types",
-    "index.js"
+    "src",
+    "entry",
+    "@types"
   ],
   "keywords": [
     "vdom",

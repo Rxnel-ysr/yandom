@@ -1,15 +1,6 @@
 "use strict";
 /**
  *
- * @param {String} uri
- * @return {string}
- */
-function file(uri) {
-  return `${window.location.origin}/${ltrim(uri, "/") }`;
-}
-
-/**
- *
  * @param {String} string
  * @param {String} character
  */
@@ -75,35 +66,11 @@ function currentUri(withHash = false) {
   return res;
 }
 
-/**
- * Generate RFC 4122–compliant UUID v4.
- * Uses Web Crypto. Secure. Collision-safe.
- *
- * @returns {string} UUID v4
- */
-function uuidv4() {
-  const b = crypto.getRandomValues(new Uint8Array(16));
-
-  // RFC 4122 compliance
-  b[6] = (b[6] & 0x0f) | 0x40; // version 4
-  b[8] = (b[8] & 0x3f) | 0x80; // variant 10
-
-  return [...b]
-    .map(
-      (v, i) =>
-        ([4, 6, 8, 10].includes(i) ? "-" : "") +
-        v.toString(16).padStart(2, "0"),
-    )
-    .join("");
-}
-
 export {
-  file,
   ltrim,
   rtrim,
   trim,
   currentUri,
-  uuidv4,
   value,
   valueComputed,
 };
