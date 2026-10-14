@@ -1,7 +1,7 @@
 "use strict";
-import VDOM from "./core/vdom.js";
-import {Hooks, Root} from "./core/vdom.hooks.js";
-import Memory from "./core/memory.js";
+import VDOM from "../src/vdom.js";
+import { Hooks, Root } from "../src/hooks.js";
+import Memory from "../src/memory.js";
 
 /**
  * Create a setup with initialized Root
@@ -44,7 +44,6 @@ const updateProps = vdom.updateProps.bind(vdom);
 const createVNode = vdom.createVNode.bind(vdom);
 const renderVNode = vdom.renderVNode.bind(vdom);
 const cleanupVNode = vdom.cleanupVNode.bind(vdom);
-const RenderVDOM = vdom.RenderVDOM;
 const patch = vdom.patch.bind(vdom);
 const registerVdom = vdom.registerVdom.bind(vdom);
 const pushJob = vdom.pushJob.bind(vdom);
@@ -68,9 +67,8 @@ const getData = hooks.getData.bind(hooks);
 const bulkSetState = hooks.bulkSetState.bind(hooks);
 const hmr = hooks.hmr.bind(hooks);
 
-export { default as Memory } from './core/memory.js';
-export * from './extensions/router.js';
-export * from './helper/helper.js';
+export * from '../src/helper.js';
+export { Root } from  '../src/hooks.js'
 export {
     // classes + singletons
     VDOM,
@@ -86,7 +84,6 @@ export {
     createVNode,
     renderVNode,
     cleanupVNode,
-    RenderVDOM,
     patch,
     registerVdom,
     pushJob,

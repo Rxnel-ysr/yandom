@@ -2,16 +2,10 @@
 /// <reference path="../@types/router.js" />
 
 "use strict";
-import { currentUri, trim, value } from "../helper/helper.js";
-import {
-    comp,
-    triggerRerender,
-    createVNode,
-    html,
-    pushJob,
-    registerVdom,
-} from "../index.js";
-import Memory from "../core/memory.js";
+import { currentUri, trim, value } from "./helper.js";
+import Memory from "./memory.js";
+import Hooks from "./hooks.js";
+import VDOMBASE from "./vdom-core.js";
 
 /**
  * @param {any} v
@@ -66,6 +60,10 @@ class RadixNode {
 }
 
 class Router {
+    /** @type {VDOMBASE} */
+    vdom;
+    /** @type {Hooks} */
+    hooks;
     /** @type {RadixNode} */
     root;
     /** @type {(() => void) | undefined} */
@@ -103,7 +101,7 @@ class Router {
      * @returns {void}
      */
     prepare() {
-        this.use(triggerRerender);
+        this.use(this.hooks.triggerRerender);
     }
 
     /**
@@ -178,11 +176,13 @@ class Router {
     }
 
     /**
+     * @param {VDOMBASE} vdom
+     * @param {Hooks} hooks
      * @param {RouterOptions} option
      * @returns {Router}
      */
-    static make(option) {
-        return new Router(option);
+    static make(vdom, hooks, option) {
+        return new Router(vdom, hooks, option);
     }
 
     /**
@@ -198,9 +198,13 @@ class Router {
     }
 
     /**
+     * @param {VDOMBASE} vdom
+     * @param {Hooks} hooks
      * @param {RouterOptions} option
      */
-    constructor(option) {
+    constructor(vdom, hooks, option) {
+        this.vdom = vdom;
+        this.hooks = hooks
         this.root = new RadixNode();
         this.cache = new Memory(value(option?.cleanUpInterval, 300000));
         this.option = option;
@@ -217,7 +221,7 @@ class Router {
             this.placeholder = option.placeholder;
         }
 
-        registerVdom("routerLink", (props = {}, ...children) => {
+        this.vdom.registerVdom("routerLink", (props = {}, ...children) => {
             let destination = props?.to || "";
             let scroll = props?.scrollTo || "";
             let block = props?.block || "start";
@@ -226,7 +230,7 @@ class Router {
             delete props.to;
             delete props.scrollTo;
 
-            return createVNode(
+            return this.vdom.createVNode(
                 this.element,
                 {
                     ...this.elementProps,
@@ -243,7 +247,7 @@ class Router {
                         }
                         if (scroll) {
                             if (different) {
-                                pushJob(() => {
+                                this.vdom.pushJob(() => {
                                     this.scrollToHash(scroll, block);
                                 });
                             } else {
@@ -265,7 +269,7 @@ class Router {
     fallback(component, opt = {}) {
         let c;
         if (typeof component == "function") {
-            c = comp(component, {}, { name: "defaultRoute", ...opt });
+            c = this.hooks.comp(component, {}, { name: "defaultRoute", ...opt });
         } else {
             c = component;
         }
@@ -542,7 +546,7 @@ class Router {
      * @returns {VNode | VNodeComponent | string | null}
      */
     routerView(args = {}, path = location.pathname) {
-        let result = null;
+        let result = this.option.defaultRoute;
         /** @type {Record<string, string|undefined>} */
         const params = {};
 
@@ -615,11 +619,11 @@ class Router {
         try {
             if (isLazyComponent(component)) {
                 if (component.importedFn) {
-                    return comp(component.importedFn, args, setting);
+                    return this.hooks.comp(component.importedFn, args, setting);
                 }
                 this._scheduleFetchComponent(this.cachePath, route, args);
                 if (this.placeholder) {
-                    return comp(
+                    return this.hooks.comp(
                         this.placeholder,
                         {},
                         { name: "routerPlaceholder", remember: true, invalidAfter: 0 },
@@ -627,10 +631,10 @@ class Router {
                 }
                 return null;
             } else {
-                return comp(component, args, setting);
+                return this.hooks.comp(component, args, setting);
             }
         } catch (e) {
-            return html.p(`Render error: ${e}`);
+            return this.vdom.html.p(`Render error: ${e}`);
         }
     }
 
@@ -643,9 +647,9 @@ class Router {
     _scheduleFetchComponent(path, route, args) {
         let lazyComponent = route.component;
         if (isLazyComponent(lazyComponent)) {
-            pushJob(async () => {
+            this.vdom.pushJob(async () => {
                 let realComponent = await lazyComponent.importFn();
-                let rendered = comp(realComponent.default, args, route.setting);
+                let rendered = this.hooks.comp(realComponent.default, args, route.setting);
 
                 lazyComponent.importedFn = realComponent.default;
                 this.cache.forget(path);
@@ -675,6 +679,5 @@ class Router {
 }
 
 // Create router instance
-const createRouter = Router.make;
 
-export { Router, createRouter, lazyLoad };
+export { Router, lazyLoad };

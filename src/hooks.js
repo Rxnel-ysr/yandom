@@ -1,7 +1,6 @@
-/// <reference path="../@types/vdom.hooks.js" />
 /// <reference path="../@types/vdom.js" />
 "use strict";
-import { value, valueComputed } from "../helper/helper.js";
+import { value, valueComputed } from "./helper.js";
 import VDOM from "./vdom.js";
 
 function onReady(cb, delay = 1000) {
@@ -63,7 +62,7 @@ class Root {
      */
     render(app) {
         this.renderFn = app;
-        this.hooksRuntime.handler = () => this.rerender();
+        this.hooksRuntime.handler =this.rerender;
         this.rerender();
         return this;
     }
@@ -85,8 +84,12 @@ class Root {
     setRenderFn(fn) {
         this.renderFn = fn;
     }
-
-    rerender() {
+    
+    /** @param {Function} fn */
+    rerender(renderFn = null) {
+        if (typeof renderFn == "function") {
+            this.renderFn = renderFn;
+        }
         requestAnimationFrame(() => {
             const runtime = this.hooksRuntime;
 
@@ -101,7 +104,7 @@ class Root {
                     runtime.resetContext();
                     const newVNode = this.renderFn();
                     if (!this.vdomTree) {
-                        this.vdomTree = this.vdom.render(newVNode, this.target);
+                        this.vdomTree = this.vdom.render(this.target, newVNode);
                     } else {
                         this.vdomTree = this.vdom.update(
                             this.target,
