@@ -1,4 +1,3 @@
-// @ts-check
 /// <reference path="../@types/router.js" />
 
 "use strict";

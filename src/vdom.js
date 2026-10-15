@@ -165,6 +165,23 @@ class VDOM extends VDOMBASE {
     }
 
     /**
+     * Handle component's state application
+     * @param {VNodeComponent} component
+     */
+    handleComponentApplyState(component) {
+        this.hooks.allocate(component.compHooks - 1);
+        if (
+            component.remember &&
+            this.memory.remembered(this.memoryPrefix + component.stringified)
+        ) {
+            this.hooks.overwrite(
+                this.memory.recall(this.memoryPrefix + component.stringified),
+                component.recompute,
+            );
+        }
+    }
+
+    /**
      * @param {Element} parent
      * @param {VNode | VNodeComponent | undefined } old
      * @param {VNode | VNodeComponent | undefined } newOne
