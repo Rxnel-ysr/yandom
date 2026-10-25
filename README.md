@@ -1,4 +1,5 @@
-# yandom  
+# yandom
+[![minzipped size](https://badgen.net/bundlephobia/minzip/yandom)](https://bundlephobia.com/package/yandom)
 [![](https://data.jsdelivr.com/v1/package/gh/rxnel-ysr/yandom/badge)](https://www.jsdelivr.com/package/gh/rxnel-ysr/yandom)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/rxnel-ysr/yandom/blob/main/LICENSE)
 
