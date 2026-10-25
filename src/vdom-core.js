@@ -283,8 +283,13 @@ class VDOMBASE {
         return newProps;
     }
 
-    renderVNode(vnode, parentIsSvg = false) {
-        let work = vnode;
+renderVNode(vnode, parentIsSvg = false) {
+        let work;
+        if (VDOMBASE.isVNode(vnode)) {
+          work = vnode
+        } else {
+          work = vnode.render()
+        }
 
         if (work.tag == "#text") {
             return work.el;
