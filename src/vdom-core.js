@@ -77,6 +77,17 @@ class VDOMBASE {
         );
     }
 
+    static isVNodeComponent(v) {
+      return !VDOMBASE.isVNode(v) && (
+        typeof v?.isComp == 'boolean',
+        typeof v?.compHooks == 'number',
+        typeof v?.invalidAfter == 'number',
+        typeof v?.recompute == 'boolean',
+        typeof v?.remember == 'boolean'
+        );
+    }
+
+
     // ---- vnode utilities -----------------------------------------------------
 
     getKey(vnode) {
@@ -598,17 +609,17 @@ renderVNode(vnode, parentIsSvg = false) {
 
     /**
      * @param {Element|string} container
-     * @param {VNode} vnode
+     * @param {VNode|VNodeComponent} vnode
      * @returns {VNode | null}
      */
     render(container, vnode) {
         container =
             typeof container === "string" ? this.getTarget(container) : container;
         container.innerHTML = "";
-        const node =
-            typeof vnode === "string"
-                ? vnode
-                : this.createVNode(vnode.tag, vnode.props, vnode.children);
+      const node = VDOMBASE.isVNode(vnode)
+        ? vnode
+        : (VDOMBASE.isVNodeComponent(vnode)
+          ? vnode : this.createVNode(vnode.tag, vnode.props, vnode.children));
         return this.patch(container, null, node);
     }
 
